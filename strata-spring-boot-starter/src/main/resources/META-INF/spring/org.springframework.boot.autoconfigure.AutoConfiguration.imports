@@ -1,1 +1,2 @@
 io.strata.spring.StrataAutoConfiguration
+io.strata.spring.StrataWebFluxRoutes

@@ -18,10 +18,10 @@ final class Protocol {
 
     record GetState(ActorRef<Result> replyTo) implements Msg, Remote {}
 
-    /** A reply: {@code value} (JSON) or {@code error}. */
-    record Result(byte[] value, String error) implements Remote {
-        static Result ok(byte[] value) { return new Result(value, null); }
-        static Result failed(String error) { return new Result(null, error); }
+    /** A reply: {@code value} (JSON) or {@code error} with its {@link io.strata.StrataException.Kind} name. */
+    record Result(byte[] value, String error, String errorKind) implements Remote {
+        static Result ok(byte[] value) { return new Result(value, null, null); }
+        static Result failed(io.strata.StrataException.Kind kind, String error) { return new Result(null, error, kind.name()); }
     }
 
     /** Sent by sharding to stop an entity during passivation or hand-over. */

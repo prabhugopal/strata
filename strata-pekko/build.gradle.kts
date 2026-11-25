@@ -11,6 +11,7 @@ dependencies {
     implementation(libs.pekko.slf4j)
 
     testImplementation(project(":strata-store-jdbc"))
+    testAnnotationProcessor(project(":strata-processor"))
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.launcher)

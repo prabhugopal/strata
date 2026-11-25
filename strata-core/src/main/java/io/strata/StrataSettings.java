@@ -18,10 +18,12 @@ public record StrataSettings(
         Durability defaultDurability,
         Duration passivateAfter,
         int maxIdLength,
+        boolean discoverEntities,
         String storeKind,
         String storeExecutor,
         int storeFixedThreads,
-        boolean failOnUnknownProperties) {
+        boolean failOnUnknownProperties,
+        String fieldVisibility) {
 
     /** Settings from the application's config (application.conf, system properties, env). */
     public static StrataSettings load() {
@@ -37,10 +39,12 @@ public record StrataSettings(
                 Durability.parse(c.getString("entity.default-durability")),
                 c.getDuration("entity.passivate-after"),
                 c.getInt("entity.max-id-length"),
+                c.getBoolean("entity.discover"),
                 c.getString("store.kind"),
                 c.getString("store.executor"),
                 c.getInt("store.fixed-threads"),
-                c.getBoolean("codec.fail-on-unknown-properties"));
+                c.getBoolean("codec.fail-on-unknown-properties"),
+                c.getString("codec.field-visibility"));
     }
 
     /** The executor for blocking store I/O, as configured. Callers own and close it. */

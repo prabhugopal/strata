@@ -4,6 +4,7 @@ description = "Example: a durable counter behind Spring WebFlux, on Strata."
 
 dependencies {
     implementation(project(":strata-spring-boot-starter"))
+    annotationProcessor(project(":strata-processor"))
     implementation(platform(libs.spring.boot.bom))
     implementation(libs.spring.boot.starter.webflux)
 

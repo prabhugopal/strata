@@ -23,12 +23,16 @@ class CounterApplicationTest {
                 "--strata.store.jdbc.url=jdbc:h2:file:" + dir.resolve("db"));
     }
 
-    String send(ConfigurableApplicationContext ctx, String method, String path, String body) throws Exception {
+    HttpResponse<String> request(ConfigurableApplicationContext ctx, String method, String path, String body) throws Exception {
         String port = ctx.getEnvironment().getProperty("local.server.port");
         var req = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
                 .header("content-type", "application/json")
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body)).build();
-        var res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        return http.send(req, HttpResponse.BodyHandlers.ofString());
+    }
+
+    String send(ConfigurableApplicationContext ctx, String method, String path, String body) throws Exception {
+        var res = request(ctx, method, path, body);
         assertEquals(200, res.statusCode(), res.body());
         return res.body();
     }
@@ -39,6 +43,12 @@ class CounterApplicationTest {
             assertEquals("1", send(ctx, "POST", "/counters/alice/increment", null));
             assertEquals("11", send(ctx, "POST", "/counters/alice/add", "10"));
             assertEquals("0", send(ctx, "GET", "/counters/bob", null));
+            // Errors map to HTTP statuses, and a failed command changes nothing.
+            assertEquals(422, request(ctx, "POST", "/counters/alice/add", "-1").statusCode());
+            assertEquals(400, request(ctx, "POST", "/counters/alice/add", "\"ten\"").statusCode());
+            assertEquals(400, request(ctx, "POST", "/counters/alice/add", null).statusCode());
+            assertEquals(404, request(ctx, "POST", "/counters/alice/nope", null).statusCode());
+            assertEquals("11", send(ctx, "GET", "/counters/alice", null));
         }
         try (var ctx = start()) {
             assertEquals("11", send(ctx, "GET", "/counters/alice", null), "state committed by the previous process");

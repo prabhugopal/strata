@@ -4,6 +4,37 @@ Durable, distributed entities for the JVM, on Apache Pekko. **Milestone 0**: sha
 entities with committed state, usable from Java, Kotlin, Scala and Clojure, with Spring Boot / WebFlux
 support. The architecture and roadmap are in [`docs/`](docs/).
 
+You write the business logic; Strata does the rest:
+
+```java
+@Entity(mount = "/counters/{id}")
+public class Counter {
+    private long count;                                   // fields are the state
+
+    @Command(post = "/increment") public long increment() { return ++count; }
+    @Command(post = "/add")       public long add(long n) { return count += n; }
+    @Query(get = "")              public long count()     { return count; }
+}
+```
+
+```java
+StrataRuntime strata = Strata.start();                     // finds @Entity classes, serves their routes
+CounterClient.of(strata, "alice").add(5);                  // generated, typed: CompletionStage<Long>
+```
+
+```sh
+curl -X POST localhost:8080/counters/alice/increment       # 1
+curl localhost:8080/counters/alice                         # 1
+```
+
+At compile time `strata-processor` generates `CounterEntity` (the entity type, found automatically
+at start) and `CounterClient`. Annotation mistakes (a GET route with arguments, a missing mount, a
+`final` state field…) are compile errors. If a command throws, the entity keeps its last
+committed state. Generated class suffixes are processor options (`-Astrata.entitySuffix=…`,
+`-Astrata.clientSuffix=…`).
+
+The same entity with the builder API (no annotations, no code generation, for any JVM language):
+
 ```java
 EntityType<Long> counter = EntityType.builder("counter", Long.class)
     .initial(() -> 0L)
@@ -26,17 +57,22 @@ acknowledged. Idle entities are stopped and reload on next use.
 
 | Module | What it is |
 |---|---|
-| `strata-core` | The API: `EntityType`, `Reply`, `StrataRuntime`, `EntityRef`, settings, and the runtime and store SPIs. No Pekko, no Spring. |
+| `strata-core` | The API: `@Entity`/`@Command`/`@Query`, `EntityType`, `Reply`, `StrataRuntime`, `EntityRef`, settings, the route table, and the runtime, store and extension SPIs. No Pekko, no Spring. |
+| `strata-processor` | Annotation processor: generates the entity type, its discovery entry and a typed client. |
 | `strata-pekko` | The runtime on Pekko: cluster sharding, single-writer entity actors, passivation, fencing of stale writers. |
 | `strata-store-jdbc` | Committed state in PostgreSQL (or H2 for local development), with an optimistic revision per entity. |
-| `strata-spring-boot-starter` | Spring Boot auto-configuration: `strata.*` in `application.yaml`, every `EntityType` bean registered, lifecycle tied to Spring. |
-| `examples/counter-spring` | The counter behind Spring WebFlux. |
+| `strata-http` | Serves entity routes with Pekko HTTP on its own port. No Spring. |
+| `strata-spring-boot-starter` | Optional Spring Boot support: `strata.*` in `application.yaml`, `EntityType` beans registered, entity routes on Spring WebFlux, lifecycle tied to Spring. |
+| `examples/counter-pekko` | The annotated counter on Pekko HTTP, no Spring. |
+| `examples/counter-spring` | The same counter inside a Spring Boot WebFlux app. |
 | `examples/interop-{kotlin,scala,clojure}` | The same counter written in each language, tested on the real runtime. |
 
 ## Languages
 
 The core API is plain functions and builders, so every JVM language uses it directly. Annotations
-(`@StrataEntity`) can be added later as Java/Kotlin convenience on top.
+are processed for Java today; Kotlin (KSP), Scala 3 (macro) and Clojure (`defentity` macro) get
+their own way to remove the same boilerplate. Spring is never required: `Strata.start()` and
+strata-http serve everything without it.
 
 - **Kotlin**: `.command("increment") { s: Long -> Reply.update(s + 1, s + 1) }`
 - **Scala 3**: `.command("increment", (s: java.lang.Long) => Reply.update(s + 1, s + 1))`
@@ -58,6 +94,12 @@ Spring apps) under `strata:` in `application.yaml`.
 | `strata.entity.default-durability` | `persistent` | `persistent` (committed before reply) or `ephemeral` |
 | `strata.entity.passivate-after` | `2m` | Stop idle entities; they reload on next use |
 | `strata.entity.max-id-length` | `1024` | Longest entity id; stores size their id column from it |
+| `strata.entity.discover` | `true` | Register every `@Entity` type on the classpath at start |
+| `strata.http.enabled` (`STRATA_HTTP_ENABLED`) | `true` | Serve entity routes (strata-http or Spring WebFlux) |
+| `strata.http.base-path` | `""` | Prefix for every route, e.g. `/api` |
+| `strata.http.max-body-bytes` | `1048576` | Largest request body |
+| `strata.http.host` / `port` (`STRATA_HTTP_HOST`, `PORT`, `STRATA_HTTP_PORT`) | `0.0.0.0` / `8080` | strata-http's listen address |
+| `strata.codec.field-visibility` | `any` | Which fields are stored without getters |
 | `strata.store.kind` (`STRATA_STORE`) | `memory` | `memory` or `jdbc` |
 | `strata.store.executor` | `virtual` | Blocking store I/O on virtual threads, or `fixed` |
 | `strata.store.jdbc.url` (`STRATA_JDBC_URL`) | local H2 file | e.g. `jdbc:postgresql://db:5432/strata` |
@@ -81,7 +123,8 @@ Build settings live in `gradle.properties`; dependency versions only in `gradle/
 
 ```sh
 ./gradlew build                                   # everything, including all tests
-./gradlew :examples:counter-spring:run            # http://localhost:8080
+./gradlew :examples:counter-pekko:run             # http://localhost:8080, no Spring
+./gradlew :examples:counter-spring:run            # the same, inside Spring Boot
 curl -X POST localhost:8080/counters/alice/increment
 curl localhost:8080/counters/alice
 ```
@@ -98,12 +141,18 @@ Kubernetes pod spec).
 - 200 concurrent increments on one entity apply exactly once each.
 - State survives passivation, a clean restart and `kill -9` of the server.
 - A stale writer can't overwrite newer state (revision fencing in memory and JDBC stores).
-- Handler errors and unknown commands reach the caller; state is unchanged.
+- Handler errors and unknown commands reach the caller; state is unchanged, even when an annotated
+  entity changed its fields before throwing.
+- Errors carry a kind that HTTP maps to a status: bad argument 400, unknown route 404, wrong
+  method 405, conflict 409, handler failure 422, unavailable 503.
+- Annotated entities: several parameters, generic parameters and results, void commands,
+  queries with arguments, discovery on and off, state across restarts.
+- Annotation mistakes fail compilation with a message on the offending element.
 - Bad configuration fails at startup.
 - The same API works from Java, Kotlin, Scala 3 and Clojure.
 
 ## Next
 
-M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
+Annotations for Kotlin, Scala and Clojure · management API and Stratum connection · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
 signals · M3 three-node cluster on Kubernetes (bootstrap, lease, rolling restarts) · M4 management API
 and metrics for Stratum · M5 Spring AI agent. PostgreSQL integration tests need Docker (Testcontainers).

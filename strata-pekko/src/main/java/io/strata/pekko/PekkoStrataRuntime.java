@@ -6,6 +6,8 @@ import io.strata.EntityType;
 import io.strata.StrataException;
 import io.strata.StrataRuntime;
 import io.strata.StrataSettings;
+import io.strata.TypeRef;
+import io.strata.StrataException.Kind;
 import io.strata.spi.RuntimeProvider;
 import io.strata.spi.StateStore;
 import io.strata.spi.StateStores;
@@ -20,9 +22,12 @@ import org.apache.pekko.cluster.sharding.typed.javadsl.EntityTypeKey;
 import org.apache.pekko.cluster.typed.Cluster;
 import org.apache.pekko.cluster.typed.Join;
 
+import java.lang.reflect.Type;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
@@ -36,7 +41,8 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     private final StateStore store;
     private final ActorSystem<Void> system;
     private final ClusterSharding sharding;
-    private final Map<String, Registered<?>> types = new ConcurrentHashMap<>();
+    private final Map<String, Registered<?>> types = new LinkedHashMap<>(); // guarded by itself
+    private final java.util.Deque<AutoCloseable> closeWith = new java.util.concurrent.ConcurrentLinkedDeque<>();
 
     private record Registered<S>(EntityType<S> type, EntityTypeKey<Msg> key) {}
 
@@ -70,8 +76,12 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     @Override
     public <S> void register(EntityType<S> type) {
         EntityTypeKey<Msg> key = EntityTypeKey.create(Msg.class, type.name());
-        if (types.putIfAbsent(type.name(), new Registered<>(type, key)) != null) {
-            throw new StrataException("Entity type \"" + type.name() + "\" is already registered");
+        synchronized (types) {
+            Registered<?> existing = types.putIfAbsent(type.name(), new Registered<>(type, key));
+            if (existing != null) {
+                if (existing.type() == type) return; // e.g. discovered and also declared as a Spring bean
+                throw new StrataException("A different entity type named \"" + type.name() + "\" is already registered");
+            }
         }
         var deps = new EntityActor.Deps(codec, store, type.durability(settings), settings.passivateAfter(), pekko.stashCapacity());
         sharding.init(Entity.of(key, ctx -> EntityActor.create(type, ctx.getEntityId(), deps, ctx.getShard()))
@@ -79,12 +89,20 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     }
 
     @Override
+    public Collection<EntityType<?>> types() {
+        synchronized (types) {
+            return types.values().stream().<EntityType<?>>map(Registered::type).toList();
+        }
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     public <S> EntityRef<S> ref(EntityType<S> type, String id) {
-        Registered<?> r = types.get(type.name());
-        if (r == null) throw new StrataException("Entity type \"" + type.name() + "\" isn't registered; call register() first");
+        Registered<?> r;
+        synchronized (types) { r = types.get(type.name()); }
+        if (r == null) throw new StrataException(Kind.NOT_FOUND, "Entity type \"" + type.name() + "\" isn't registered; call register() first");
         if (id == null || id.isBlank() || id.length() > settings.maxIdLength()) {
-            throw new StrataException("Entity id must be 1-" + settings.maxIdLength() + " characters (strata.entity.max-id-length): " + id);
+            throw new StrataException(Kind.INVALID_ARGUMENT, "Entity id must be 1-" + settings.maxIdLength() + " characters (strata.entity.max-id-length): " + id);
         }
         return new Ref<>((EntityType<S>) r.type(), id, sharding.entityRefFor(r.key(), id));
     }
@@ -92,8 +110,17 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     @Override
     public StrataSettings settings() { return settings; }
 
+    /** The node's actor system, for modules built on Pekko (e.g. strata-http). */
+    public ActorSystem<Void> actorSystem() { return system; }
+
+    @Override
+    public void closeWith(AutoCloseable resource) { closeWith.push(resource); }
+
     @Override
     public void close() {
+        for (AutoCloseable r; (r = closeWith.poll()) != null; ) {
+            try { r.close(); } catch (Exception e) { system.log().warn("Couldn't close {}", r, e); }
+        }
         system.terminate();
         try {
             system.getWhenTerminated().toCompletableFuture().get(pekko.startupTimeout().toMillis(), TimeUnit.MILLISECONDS);
@@ -128,15 +155,38 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         }
 
         @Override
+        public <R> CompletionStage<R> call(String command, Object arg, TypeRef<R> resultType) {
+            byte[] encoded = arg == null ? null : codec.encode(arg);
+            return ask(replyTo -> new Invoke(command, encoded, replyTo), resultType.type());
+        }
+
+        @Override
+        public CompletionStage<byte[]> callJson(String command, byte[] jsonArg) {
+            return askRaw(replyTo -> new Invoke(command, jsonArg, replyTo));
+        }
+
+        @Override
         public CompletionStage<S> state() {
             return ask(GetState::new, type.stateType());
         }
 
-        private <R> CompletionStage<R> ask(Function<org.apache.pekko.actor.typed.ActorRef<Result>, Msg> msg, Class<R> resultType) {
+        private <R> CompletionStage<R> ask(Function<org.apache.pekko.actor.typed.ActorRef<Result>, Msg> msg, Type resultType) {
+            return askRaw(msg).thenApply(bytes -> codec.decode(bytes, resultType));
+        }
+
+        private CompletionStage<byte[]> askRaw(Function<org.apache.pekko.actor.typed.ActorRef<Result>, Msg> msg) {
             CompletionStage<Result> reply = AskPattern.ask(target, msg::apply, settings.callTimeout(), system.scheduler());
-            return reply.thenApply(r -> {
-                if (r.error() != null) throw new StrataException(r.error());
-                return codec.decode(r.value(), resultType);
+            return reply.handle((r, failure) -> {
+                if (failure != null) {
+                    Throwable cause = failure instanceof java.util.concurrent.CompletionException ce && ce.getCause() != null ? ce.getCause() : failure;
+                    if (cause instanceof TimeoutException) {
+                        throw new StrataException(Kind.UNAVAILABLE, type.name() + "/" + id + " didn't answer within "
+                                + settings.callTimeout() + " (strata.call-timeout)", cause);
+                    }
+                    throw new StrataException(Kind.UNAVAILABLE, type.name() + "/" + id + ": " + cause.getMessage(), cause);
+                }
+                if (r.error() != null) throw new StrataException(Kind.parse(r.errorKind()), r.error());
+                return r.value();
             });
         }
     }

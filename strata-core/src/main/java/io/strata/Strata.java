@@ -2,7 +2,9 @@ package io.strata;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
+import io.strata.spi.EntityTypeProvider;
 import io.strata.spi.RuntimeProvider;
+import io.strata.spi.StrataExtension;
 
 import java.util.ServiceLoader;
 import java.util.stream.Collectors;
@@ -18,6 +20,20 @@ public final class Strata {
 
     public static StrataRuntime start(Config config) {
         StrataSettings settings = StrataSettings.from(config);
+        StrataRuntime runtime = startRuntime(settings);
+        try {
+            if (settings.discoverEntities()) {
+                ServiceLoader.load(EntityTypeProvider.class).forEach(p -> runtime.register(p.entityType()));
+            }
+            ServiceLoader.load(StrataExtension.class).forEach(e -> e.start(runtime));
+        } catch (RuntimeException e) {
+            runtime.close();
+            throw e;
+        }
+        return runtime;
+    }
+
+    private static StrataRuntime startRuntime(StrataSettings settings) {
         ServiceLoader<RuntimeProvider> providers = ServiceLoader.load(RuntimeProvider.class);
         return providers.stream()
                 .map(ServiceLoader.Provider::get)

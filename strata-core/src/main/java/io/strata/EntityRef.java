@@ -15,6 +15,15 @@ public interface EntityRef<S> {
     /** Call a command with an argument; the result is decoded to {@code resultType}. */
     <R> CompletionStage<R> call(String command, Object arg, Class<R> resultType);
 
+    /** Call a command; the result is decoded to a generic type such as {@code List<Order>}. */
+    <R> CompletionStage<R> call(String command, Object arg, TypeRef<R> resultType);
+
+    /**
+     * Call a command with an argument that is already JSON (null for none) and get the result as
+     * JSON. For HTTP layers and tools that pass data through without knowing its Java types.
+     */
+    CompletionStage<byte[]> callJson(String command, byte[] jsonArg);
+
     /** Call a command; the result is decoded generically (numbers, strings, maps, lists). */
     default CompletionStage<Object> call(String command, Object arg) { return call(command, arg, Object.class); }
 

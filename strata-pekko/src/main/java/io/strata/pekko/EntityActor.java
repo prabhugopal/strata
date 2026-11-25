@@ -4,6 +4,8 @@ import io.strata.Codec;
 import io.strata.Durability;
 import io.strata.EntityType;
 import io.strata.Reply;
+import io.strata.StrataException;
+import io.strata.StrataException.Kind;
 import io.strata.spi.StaleRevisionException;
 import io.strata.spi.StateStore;
 import io.strata.spi.StoredState;
@@ -57,7 +59,7 @@ final class EntityActor<S> {
                 .onMessage(Loaded.class, l -> {
                     if (l.error() != null) {
                         ctx.getLog().error("Couldn't load {}/{}; stopping (it reloads on next use)", type.name(), id, l.error());
-                        failStashed("Couldn't load " + type.name() + "/" + id + ": " + rootMessage(l.error()));
+                        failStashed(Kind.UNAVAILABLE, "Couldn't load " + type.name() + "/" + id + ": " + rootMessage(l.error()));
                         return Behaviors.stopped();
                     }
                     S state = l.state().map(s -> deps.codec().decode(s.state(), type.stateType())).orElseGet(type::initialState);
@@ -79,13 +81,24 @@ final class EntityActor<S> {
 
     private Behavior<Msg> invoke(S state, long revision, Invoke inv) {
         Reply<S, Object> reply;
+        EntityType.CommandDef<S> def;
+        Object arg;
         try {
-            var def = type.command(inv.command());
-            Object arg = def.argType() == Void.class || inv.arg() == null ? null : deps.codec().decode(inv.arg(), def.argType());
-            reply = def.handler().handle(state, arg);
+            def = type.command(inv.command());
+            arg = def.argType() == Void.class || inv.arg() == null ? null : deps.codec().decode(inv.arg(), def.argType());
+        } catch (StrataException e) {
+            inv.replyTo().tell(Result.failed(e.kind(), type.name() + "." + inv.command() + ": " + e.getMessage()));
+            return Behaviors.same();
+        }
+        try {
+            // Mutable state is changed in place, so the handler works on a copy: if it throws,
+            // the committed state is untouched.
+            S working = type.mutableState() ? deps.codec().copy(state, type.stateType()) : state;
+            reply = def.handler().handle(working, arg);
             if (reply == null) throw new IllegalStateException("command handler returned null; return Reply.update(...) or Reply.read(...)");
         } catch (Exception e) {
-            inv.replyTo().tell(Result.failed(type.name() + "." + inv.command() + " failed: " + rootMessage(e)));
+            Kind kind = e instanceof StrataException se ? se.kind() : Kind.FAILED;
+            inv.replyTo().tell(Result.failed(kind, type.name() + "." + inv.command() + " failed: " + rootMessage(e)));
             return Behaviors.same();
         }
         byte[] result = deps.codec().encode(reply.result());
@@ -111,21 +124,21 @@ final class EntityActor<S> {
                     Throwable cause = saved.error() instanceof CompletionException ce && ce.getCause() != null ? ce.getCause() : saved.error();
                     if (cause instanceof StaleRevisionException) {
                         // Someone else wrote this entity: never overwrite; reload, then continue.
-                        replyTo.tell(Result.failed(cause.getMessage() + "; the command was not applied"));
+                        replyTo.tell(Result.failed(Kind.CONFLICT, cause.getMessage() + "; the command was not applied"));
                         ctx.pipeToSelf(deps.store().load(type.name(), id), Loaded::new);
                         return loading();
                     }
-                    replyTo.tell(Result.failed("Couldn't commit " + type.name() + "/" + id + ": " + rootMessage(cause)));
+                    replyTo.tell(Result.failed(Kind.UNAVAILABLE, "Couldn't commit " + type.name() + "/" + id + ": " + rootMessage(cause)));
                     return stash.unstashAll(ready(before, revision));
                 })
                 .onMessage(Msg.class, m -> { stash.stash(m); return Behaviors.same(); })
                 .build();
     }
 
-    private void failStashed(String why) {
+    private void failStashed(Kind kind, String why) {
         stash.forEach(m -> {
-            if (m instanceof Invoke i) i.replyTo().tell(Result.failed(why));
-            else if (m instanceof GetState g) g.replyTo().tell(Result.failed(why));
+            if (m instanceof Invoke i) i.replyTo().tell(Result.failed(kind, why));
+            else if (m instanceof GetState g) g.replyTo().tell(Result.failed(kind, why));
         });
         stash.clear();
     }
