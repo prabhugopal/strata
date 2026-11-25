@@ -11,7 +11,7 @@ import java.lang.annotation.Target;
  * without parameters; use {@code post} for a query that takes an argument.
  */
 @Documented
-@Retention(RetentionPolicy.CLASS)
+@Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
 public @interface Query {
     /** Query name; defaults to the method name. */

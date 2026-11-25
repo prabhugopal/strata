@@ -26,7 +26,7 @@ import java.lang.annotation.Target;
  * If a command throws, the entity keeps its last committed state.
  */
 @Documented
-@Retention(RetentionPolicy.CLASS)
+@Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
 public @interface Entity {
     /** Type name; defaults to the class name in kebab-case ({@code ShoppingCart} → {@code shopping-cart}). */

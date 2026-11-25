@@ -28,8 +28,8 @@ import java.util.function.Supplier;
  */
 public final class EntityType<S> {
 
-    /** One command: its argument type ({@code Void.class} for none) and handler. */
-    public record CommandDef<S>(String name, Class<?> argType, boolean readOnly, CommandHandler<S, Object, Object> handler) {}
+    /** One command: its argument type ({@code Void.class} for none; may be generic) and handler. */
+    public record CommandDef<S>(String name, java.lang.reflect.Type argType, boolean readOnly, CommandHandler<S, Object, Object> handler) {}
 
     /** An HTTP route to a command, relative to the type's {@link #mount()}. */
     public record Route(String method, String path, String command) {}
@@ -157,6 +157,18 @@ public final class EntityType<S> {
             return add(new CommandDef<>(name, argType, false, (s, a) -> (Reply<S, Object>) handler.handle(s, (A) a)));
         }
 
+        /** A command whose argument has a generic type, e.g. {@code new TypeRef<List<Item>>() {}}. */
+        @SuppressWarnings("unchecked")
+        public <A, R> Builder<S> command(String name, TypeRef<A> argType, CommandHandler<S, A, R> handler) {
+            return add(new CommandDef<>(name, argType.type(), false, (s, a) -> (Reply<S, Object>) handler.handle(s, (A) a)));
+        }
+
+        /** A command with an argument of any (possibly generic) type, for code that builds types reflectively. */
+        @SuppressWarnings("unchecked")
+        public Builder<S> command(String name, java.lang.reflect.Type argType, boolean readOnly, CommandHandler<S, Object, Object> handler) {
+            return add(new CommandDef<>(name, argType, readOnly, handler));
+        }
+
         @SuppressWarnings("unchecked")
         public <R> Builder<S> command(String name, NoArgHandler<S, R> handler) {
             return add(new CommandDef<>(name, Void.class, false, (s, a) -> (Reply<S, Object>) handler.handle(s)));
@@ -171,6 +183,12 @@ public final class EntityType<S> {
         @SuppressWarnings("unchecked")
         public <A, R> Builder<S> query(String name, Class<A> argType, QueryHandler<S, A, R> read) {
             return add(new CommandDef<>(name, argType, true, (s, a) -> Reply.read(read.read(s, (A) a))));
+        }
+
+        /** A read-only command whose argument has a generic type. */
+        @SuppressWarnings("unchecked")
+        public <A, R> Builder<S> query(String name, TypeRef<A> argType, QueryHandler<S, A, R> read) {
+            return add(new CommandDef<>(name, argType.type(), true, (s, a) -> Reply.read(read.read(s, (A) a))));
         }
 
         private Builder<S> add(CommandDef<S> def) {

@@ -77,6 +77,36 @@ class AnnotatedEntityTest {
     }
 
     @Test
+    void reflectionBuildsTheSameTypeFromConfig() throws Exception {
+        // As Scala classes are loaded: listed in config, no generated code involved.
+        try (var strata = start(Map.of("strata.entity.discover", false, "strata.entity.classes", List.of(Cart.class.getName())))) {
+            var type = strata.types().stream().filter(t -> t.name().equals("cart")).findFirst().orElseThrow();
+            assertNotSame(CartEntity.TYPE, type, "built by reflection");
+            var ref = strata.ref(type, "r1");
+            assertEquals(2, await(ref.call("add", Map.of("item", "apple", "quantity", 2), Integer.class)));  // object by name
+            assertEquals(3, await(ref.call("add", List.of("apple", 1), Integer.class)));                        // array by position
+            await(ref.call("addAll", List.of("pear")));                                                         // one generic parameter: the value itself
+            assertEquals(List.of("apple", "pear"), await(ref.call("items", null, new io.strata.TypeRef<List<String>>() {})));
+            assertEquals(3, await(ref.call("quantity", "apple", Integer.class)));
+            var failed = assertThrows(ExecutionException.class, () -> await(ref.call("addThenFail", "caviar")));
+            assertEquals(StrataException.Kind.FAILED, ((StrataException) failed.getCause()).kind());
+            assertEquals(List.of("apple", "pear"), await(ref.call("items", null, new io.strata.TypeRef<List<String>>() {})));
+            var missing = assertThrows(ExecutionException.class, () -> await(ref.call("add", Map.of("item", "fig"), Integer.class)));
+            assertEquals(StrataException.Kind.INVALID_ARGUMENT, ((StrataException) missing.getCause()).kind());
+        }
+    }
+
+    @Test
+    void generatedAndReflectedTypesShareAWireFormat() throws Exception {
+        try (var strata = start(Map.of())) {
+            var ref = strata.ref(CartEntity.TYPE, "w1");
+            assertEquals(2, await(ref.call("add", Map.of("item", "apple", "quantity", 2), Integer.class)));
+            await(ref.call("addAll", List.of("pear")));
+            assertEquals(List.of("apple", "pear"), await(CartClient.of(strata, "w1").items()));
+        }
+    }
+
+    @Test
     void discoveryCanBeTurnedOff() {
         try (var strata = start(Map.of("strata.entity.discover", false))) {
             assertFalse(strata.types().contains(CartEntity.TYPE));

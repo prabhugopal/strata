@@ -11,6 +11,7 @@ include(
     "strata-pekko",
     "strata-http",
     "strata-processor",
+    "strata-clojure",
     "strata-spring-boot-starter",
     "examples:counter-spring",
     "examples:counter-pekko",

@@ -9,11 +9,11 @@ import java.lang.annotation.Target;
 /**
  * A method that may change the entity's state. The change is committed before the caller gets
  * the result; if the method throws, nothing changes. Parameters become the command's argument:
- * one parameter is sent as-is, several (or a generic type) as a JSON object by parameter name.
+ * one parameter is sent as-is (any type, generic too), several as a JSON object by parameter name.
  * Set at most one HTTP method; its path is relative to the entity's {@link Entity#mount}.
  */
 @Documented
-@Retention(RetentionPolicy.CLASS)
+@Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
 public @interface Command {
     /** Command name; defaults to the method name. */

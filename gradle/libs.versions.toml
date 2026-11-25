@@ -27,6 +27,7 @@ scala3-library = { module = "org.scala-lang:scala3-library_3", version.ref = "sc
 clojure = { module = "org.clojure:clojure", version.ref = "clojure" }
 typesafe-config = { module = "com.typesafe:config", version.ref = "config" }
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-module-scala3 = { module = "com.fasterxml.jackson.module:jackson-module-scala_3", version.ref = "jackson" }
 jackson-jdk8 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jdk8", version.ref = "jackson" }
 h2 = { module = "com.h2database:h2", version.ref = "h2" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgresql" }
@@ -42,3 +43,4 @@ junit-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }

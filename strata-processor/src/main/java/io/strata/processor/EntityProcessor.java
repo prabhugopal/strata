@@ -92,7 +92,8 @@ public final class EntityProcessor extends AbstractProcessor {
 
     private record Op(ExecutableElement method, String command, boolean query, List<Param> params,
                       TypeMirror returns, String httpMethod, String httpPath) {
-        boolean wrapsArgs() { return params.size() > 1 || (params.size() == 1 && isGeneric(params.getFirst().type())); }
+        /** Several parameters travel as a JSON object (a generated record); one travels as itself. */
+        boolean wrapsArgs() { return params.size() > 1; }
         String argsRecord() { return Character.toUpperCase(command.charAt(0)) + command.substring(1).replaceAll("[^A-Za-z0-9_]", "_") + "Args"; }
     }
 
@@ -269,7 +270,8 @@ public final class EntityProcessor extends AbstractProcessor {
     private String argClass(Model m, Op op) {
         if (op.params().isEmpty()) return "java.lang.Void.class";
         if (op.wrapsArgs()) return m.entityClass() + "." + op.argsRecord() + ".class";
-        return erasure(op.params().getFirst().type()) + ".class";
+        TypeMirror t = op.params().getFirst().type();
+        return isGeneric(t) ? "new io.strata.TypeRef<" + t + ">() {}" : erasure(t) + ".class";
     }
 
     private String clientSource(Model m) {

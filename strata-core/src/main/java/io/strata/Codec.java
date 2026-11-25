@@ -68,6 +68,15 @@ public final class Codec {
         return e instanceof com.fasterxml.jackson.core.JsonProcessingException j ? j.getOriginalMessage() : String.valueOf(e.getMessage());
     }
 
+    /** Convert already-decoded data (e.g. a {@code JsonNode} field) to {@code type}. */
+    public <T> T convert(Object value, Type type) {
+        try {
+            return mapper.convertValue(value, mapper.constructType(type));
+        } catch (IllegalArgumentException e) {
+            throw new StrataException(StrataException.Kind.INVALID_ARGUMENT, "Can't convert argument to " + type.getTypeName() + ": " + e.getMessage(), e);
+        }
+    }
+
     /** A deep copy through JSON: what the store would hold. */
     public <T> T copy(T value, Class<T> type) {
         return decode(encode(value), type);

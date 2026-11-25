@@ -61,25 +61,55 @@ acknowledged. Idle entities are stopped and reload on next use.
 | `strata-processor` | Annotation processor: generates the entity type, its discovery entry and a typed client. |
 | `strata-pekko` | The runtime on Pekko: cluster sharding, single-writer entity actors, passivation, fencing of stale writers. |
 | `strata-store-jdbc` | Committed state in PostgreSQL (or H2 for local development), with an optimistic revision per entity. |
+| `strata-clojure` | `defentity` for Clojure, and loading entities from `strata.clojure.entities`. |
 | `strata-http` | Serves entity routes with Pekko HTTP on its own port. No Spring. |
 | `strata-spring-boot-starter` | Optional Spring Boot support: `strata.*` in `application.yaml`, `EntityType` beans registered, entity routes on Spring WebFlux, lifecycle tied to Spring. |
 | `examples/counter-pekko` | The annotated counter on Pekko HTTP, no Spring. |
 | `examples/counter-spring` | The same counter inside a Spring Boot WebFlux app. |
-| `examples/interop-{kotlin,scala,clojure}` | The same counter written in each language, tested on the real runtime. |
+| `examples/interop-{kotlin,scala,clojure}` | An annotated (or `defentity`) bank account and a builder-API counter in each language, tested on the real runtime. |
 
 ## Languages
 
-The core API is plain functions and builders, so every JVM language uses it directly. Annotations
-are processed for Java today; Kotlin (KSP), Scala 3 (macro) and Clojure (`defentity` macro) get
-their own way to remove the same boilerplate. Spring is never required: `Strata.start()` and
-strata-http serve everything without it.
+Every language writes only business logic, and all four produce the same entity type, wire
+format and HTTP routes:
 
-- **Kotlin**: `.command("increment") { s: Long -> Reply.update(s + 1, s + 1) }`
-- **Scala 3**: `.command("increment", (s: java.lang.Long) => Reply.update(s + 1, s + 1))`
-- **Clojure**: `(.command "increment" (reify NoArgHandler (handle [_ s] (Reply/update (inc s) (inc s)))))`
+| Language | How | Typed client | Registered by |
+|---|---|---|---|
+| Java | `@Entity` class, `strata-processor` as annotation processor | generated | discovery (automatic) |
+| Kotlin | the same `@Entity` class in Kotlin, processor through `kapt` | generated | discovery (automatic) |
+| Scala 3 | the same `@Entity` class in Scala; built by reflection at start | `ref.call(...)` | `strata.entity.classes` |
+| Clojure | `strata.core/defentity`: immutable map state, commands return `[state result]` | `ref.call(...)` | `strata.clojure.entities` |
 
-Arguments, results and state are JSON (Jackson), so they cross JVMs and languages; Jackson modules on
-the classpath (Kotlin, Scala) are picked up automatically.
+```kotlin
+@Entity(mount = "/accounts/{id}")
+class Account {
+    private var balance: Long = 0
+    @Command(post = "/deposit") fun deposit(amount: Long): Long { balance += amount; return balance }
+    @Query(get = "") fun balance(): Long = balance
+}
+```
+
+```scala
+@Entity(mount = "/accounts/{id}")
+class Account:
+  private var total: Long = 0L
+  @Command(post = "/deposit") def deposit(amount: Long): Long = { total += amount; total }
+  @Query(get = "") def balance(): Long = total
+```
+
+```clojure
+(defentity account
+  {:mount "/accounts/{id}" :initial {:balance 0}}
+  (command deposit {:post "/deposit"} [state amount]
+    (let [s (update state :balance + amount)] [s (:balance s)]))
+  (query balance {:get ""} [state] (:balance state)))
+```
+
+Arguments: none, one (sent as the value itself, generic types included), or several (a JSON
+object by parameter name, or an array in order). State fields can't be `final`/`val` because
+Strata restores them on load. Scala collections work with `jackson-module-scala` on the
+classpath. The builder API (`EntityType.builder`) remains for anything the annotations don't
+cover. Spring is never required.
 
 ## Configuration
 
@@ -94,7 +124,9 @@ Spring apps) under `strata:` in `application.yaml`.
 | `strata.entity.default-durability` | `persistent` | `persistent` (committed before reply) or `ephemeral` |
 | `strata.entity.passivate-after` | `2m` | Stop idle entities; they reload on next use |
 | `strata.entity.max-id-length` | `1024` | Longest entity id; stores size their id column from it |
-| `strata.entity.discover` | `true` | Register every `@Entity` type on the classpath at start |
+| `strata.entity.discover` | `true` | Register every generated (`@Entity` + processor) type on the classpath at start |
+| `strata.entity.classes` | `[]` | More entity classes to register, e.g. Scala `@Entity` classes (built by reflection) |
+| `strata.clojure.entities` | `[]` | Clojure entities, as `namespace/var` (strata-clojure) |
 | `strata.http.enabled` (`STRATA_HTTP_ENABLED`) | `true` | Serve entity routes (strata-http or Spring WebFlux) |
 | `strata.http.base-path` | `""` | Prefix for every route, e.g. `/api` |
 | `strata.http.max-body-bytes` | `1048576` | Largest request body |
@@ -153,6 +185,6 @@ Kubernetes pod spec).
 
 ## Next
 
-Annotations for Kotlin, Scala and Clojure · management API and Stratum connection · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
+Management API and Stratum connection · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
 signals · M3 three-node cluster on Kubernetes (bootstrap, lease, rolling restarts) · M4 management API
 and metrics for Stratum · M5 Spring AI agent. PostgreSQL integration tests need Docker (Testcontainers).

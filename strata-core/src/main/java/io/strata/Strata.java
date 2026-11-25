@@ -2,6 +2,7 @@ package io.strata;
 
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
+import io.strata.spi.EntitySource;
 import io.strata.spi.EntityTypeProvider;
 import io.strata.spi.RuntimeProvider;
 import io.strata.spi.StrataExtension;
@@ -24,6 +25,14 @@ public final class Strata {
         try {
             if (settings.discoverEntities()) {
                 ServiceLoader.load(EntityTypeProvider.class).forEach(p -> runtime.register(p.entityType()));
+            }
+            Codec codec = new Codec(settings);
+            for (EntitySource source : ServiceLoader.load(EntitySource.class)) {
+                for (EntityType<?> t : source.entityTypes(settings, codec)) {
+                    // A class listed in config whose type was also discovered (generated) is registered once.
+                    boolean same = runtime.types().stream().anyMatch(r -> r.name().equals(t.name()) && r.stateType() == t.stateType());
+                    if (!same) runtime.register(t);
+                }
             }
             ServiceLoader.load(StrataExtension.class).forEach(e -> e.start(runtime));
         } catch (RuntimeException e) {
