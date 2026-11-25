@@ -4,6 +4,7 @@ description = "JDBC state store for Strata (PostgreSQL in production, H2 for loc
 
 dependencies {
     api(project(":strata-core"))
+    implementation(libs.hikaricp)
     runtimeOnly(libs.postgresql)
     runtimeOnly(libs.h2)
 

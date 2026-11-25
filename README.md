@@ -157,6 +157,7 @@ Spring apps) under `strata:` in `application.yaml`.
 | `strata.store.jdbc.url` (`STRATA_JDBC_URL`) | local H2 file | e.g. `jdbc:postgresql://db:5432/strata` |
 | `strata.store.jdbc.table` | `strata_entity_state` | State table (created if `create-schema = true`) |
 | `strata.store.jdbc.max-state-bytes` | `1048576` | State column size on databases that need one (H2) |
+| `strata.store.jdbc.pool.max-size` (`STRATA_JDBC_POOL_SIZE`) | `16` | Database connections (HikariCP); also `min-idle`, timeouts |
 | `strata.pekko.cluster-mode` (`STRATA_CLUSTER_MODE`) | `single` | `single` or `seed-nodes` |
 | `strata.pekko.number-of-shards` | `1024` | Fixed for the cluster's lifetime |
 | `strata.pekko.system.pekko.*` | see file | Pekko settings for Strata's actor system (host/port via `STRATA_HOST`/`STRATA_PORT`) |
