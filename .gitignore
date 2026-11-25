@@ -9,3 +9,6 @@ data/
 *.mv.db
 *.trace.db
 .cpcache/
+
+# Rust CLI
+cli/target/

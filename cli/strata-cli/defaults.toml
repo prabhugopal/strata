@@ -1,0 +1,12 @@
+# strata CLI defaults. Override any key under [settings] in ~/.strata/config.toml
+# (or $STRATA_HOME/config.toml).
+[settings]
+# Where nodes serve the management API (strata.management.base-path on the node).
+base_path = "/strata"
+# Seconds per request.
+timeout = 15
+# Entities listed per page.
+page = 100
+# `strata events --follow`: how often to poll, in milliseconds, and how many per poll.
+follow_interval_ms = 1000
+events_per_poll = 500

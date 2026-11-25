@@ -1,0 +1,15 @@
+[package]
+name = "strata-client"
+description = "Typed access to a Strata node's management API (no UI dependencies)"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros", "net", "io-util"] }

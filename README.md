@@ -131,6 +131,29 @@ Set `strata.management.token` (`STRATA_MANAGEMENT_TOKEN`) to require a bearer to
 `allow-invoke = false` for read-only. Limits, event capacity, histogram buckets and schema depth
 are all settings.
 
+## The `strata` CLI
+
+A single binary (Rust, in `cli/`) that talks to any node's management API. Servers are kept in
+`~/.strata/config.toml` (or `$STRATA_HOME`), readable only by you; settings there override the
+built-in defaults (`cli/strata-cli/defaults.toml`). Tokens are read from stdin
+(`--token-stdin`) or `STRATA_TOKEN`, never from arguments.
+
+```sh
+cd cli && cargo install --path strata-cli         # or: cargo build --release
+strata server add dev http://localhost:8080
+strata types                                      # entity types, commands, routes
+strata entities counter --all                     # stored and in-memory entities
+strata call counter/alice add 5                   # → 5 (JSON in, JSON out; bare words are strings)
+strata get counter/alice                          # committed state and revision
+strata events --follow --type counter             # live event feed
+strata metrics                                    # per-command totals (--raw for Prometheus)
+strata cluster                                    # nodes and entities per node
+strata -F json …                                  # machine-readable output
+```
+
+`-s NAME` (or `STRATA_SERVER`) picks a server; `--url URL` talks to one directly. Errors exit
+with status 1 and the node's message.
+
 ## Configuration
 
 Nothing is hard-coded: every default lives in a module's `reference.conf`, and code reads settings
@@ -208,6 +231,7 @@ Kubernetes pod spec).
 
 ## Next
 
-Stratum connection · Gradle plugin and strata CLI · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
+Gradle plugin (dependencies, processor, JVM flags, container image) · `strata deploy` and
+Kubernetes · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
 signals · M3 three-node cluster on Kubernetes (bootstrap, lease, rolling restarts) · M4 management API
 and metrics for Stratum · M5 Spring AI agent. PostgreSQL integration tests need Docker (Testcontainers).
