@@ -223,6 +223,14 @@ public final class EntityProcessor extends AbstractProcessor {
             }
         }
         for (Op op : m.ops()) {
+            b.append("            .describe(").append(literal(op.command())).append(", java.util.List.of(");
+            for (int i = 0; i < op.params().size(); i++) {
+                Param p = op.params().get(i);
+                b.append(i == 0 ? "" : ", ").append("new io.strata.EntityType.Param(").append(literal(p.name())).append(", ").append(typeExpr(p.type())).append(")");
+            }
+            b.append("), ").append(op.returns().getKind() == TypeKind.VOID ? "java.lang.Void.class" : typeExpr(op.returns())).append(")\n");
+        }
+        for (Op op : m.ops()) {
             if (op.httpMethod() != null) {
                 b.append("            .route(").append(literal(op.httpMethod())).append(", ").append(literal(op.httpPath()))
                  .append(", ").append(literal(op.command())).append(")\n");
@@ -321,6 +329,12 @@ public final class EntityProcessor extends AbstractProcessor {
             case TYPEVAR, WILDCARD, INTERSECTION, UNION -> true;
             default -> false;
         };
+    }
+
+    /** A {@code java.lang.reflect.Type} expression for {@code t}, keeping generic arguments. */
+    private String typeExpr(TypeMirror t) {
+        if (t.getKind().isPrimitive()) return t + ".class";
+        return isGeneric(t) ? "new io.strata.TypeRef<" + t + ">() {}.type()" : erasure(t) + ".class";
     }
 
     /** The class literal's type: boxed primitives, raw declared types. */

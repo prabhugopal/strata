@@ -14,6 +14,9 @@ public interface StrataRuntime extends AutoCloseable {
 
     StrataSettings settings();
 
+    /** Metrics, events, the cluster view and the store, for management tools. */
+    io.strata.management.Introspection introspection();
+
     /** Close {@code resource} when the runtime closes (before the runtime itself), e.g. an HTTP server. */
     void closeWith(AutoCloseable resource);
 

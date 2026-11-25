@@ -7,6 +7,7 @@ import io.strata.StrataSettings;
 import io.strata.spi.StaleRevisionException;
 import io.strata.spi.StateStore;
 import io.strata.spi.StateStoreProvider;
+import io.strata.spi.StoredEntry;
 import io.strata.spi.StoredState;
 
 import java.sql.Connection;
@@ -16,6 +17,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -121,6 +124,26 @@ public final class JdbcStateStore implements StateStore {
                 return expectedRevision + 1;
             } catch (SQLException e) {
                 throw new StrataException("Can't save " + type + "/" + id, e);
+            }
+        }, io);
+    }
+
+    @Override
+    public CompletionStage<List<StoredEntry>> list(String type, String afterId, int limit) {
+        return CompletableFuture.supplyAsync(() -> {
+            String sql = "SELECT entity_id, revision, updated_at FROM " + table + " WHERE entity_type = ?"
+                    + (afterId == null ? "" : " AND entity_id > ?") + " ORDER BY entity_id FETCH FIRST " + Math.max(1, limit) + " ROWS ONLY";
+            try (Connection c = connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+                ps.setQueryTimeout(timeoutSeconds);
+                ps.setString(1, type);
+                if (afterId != null) ps.setString(2, afterId);
+                List<StoredEntry> out = new ArrayList<>();
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) out.add(new StoredEntry(rs.getString(1), rs.getLong(2), rs.getTimestamp(3).toInstant()));
+                }
+                return out;
+            } catch (SQLException e) {
+                throw new StrataException("Can't list " + type + " entities", e);
             }
         }, io);
     }

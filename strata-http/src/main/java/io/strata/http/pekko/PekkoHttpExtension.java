@@ -6,6 +6,7 @@ import io.strata.StrataException;
 import io.strata.StrataRuntime;
 import io.strata.http.LiveRoutes;
 import io.strata.http.RouteTable;
+import io.strata.management.ManagementApi;
 import io.strata.pekko.PekkoStrataRuntime;
 import io.strata.spi.StrataExtension;
 import org.apache.pekko.actor.typed.ActorSystem;
@@ -80,15 +81,28 @@ public final class PekkoHttpExtension implements StrataExtension {
         private final Settings s;
         private final Materializer mat;
         private final LiveRoutes routes;
+        private final ManagementApi management;
 
         Server(StrataRuntime runtime, Settings s, Materializer mat) {
             this.runtime = runtime; this.s = s; this.mat = mat;
             this.routes = new LiveRoutes(runtime, s.basePath());
+            this.management = new ManagementApi(runtime);
+        }
+
+        private CompletionStage<HttpResponse> manage(HttpRequest request, String path) {
+            String query = request.getUri().rawQueryString().orElse("");
+            String auth = request.getHeader("Authorization").map(h -> h.value()).orElse(null);
+            return request.entity().toStrict(s.bodyTimeout().toMillis(), s.maxBodyBytes(), mat)
+                    .thenCompose(e -> management.handle(request.method().value(), path, ManagementApi.parseQuery(query), e.getData().toArray(), auth))
+                    .thenApply(r -> HttpResponse.create().withStatus(StatusCodes.get(r.status())).withEntity(HttpEntities.create(
+                            r.contentType().startsWith("application/json") ? ContentTypes.APPLICATION_JSON : ContentTypes.TEXT_PLAIN_UTF8, r.body())))
+                    .exceptionally(err -> error(RouteTable.status(err), RouteTable.message(err)));
         }
 
         CompletionStage<HttpResponse> handle(HttpRequest request) {
             String path = request.getUri().path();
             String method = request.method().value();
+            if (management.handles(path)) return manage(request, path);
             RouteTable t = routes.current();
             var match = t.match(method, path);
             if (match.isEmpty()) {

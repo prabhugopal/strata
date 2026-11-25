@@ -10,7 +10,7 @@
 
   State, arguments and results travel as JSON: map keys come back as keywords, other values
   as strings, numbers, booleans, vectors and maps. List the var in strata.clojure.entities."
-  (:import [io.strata EntityType Reply CommandHandler Durability]
+  (:import [io.strata EntityType EntityType$Param Reply CommandHandler Durability]
            [java.util.function Supplier]))
 
 (defn- ->json
@@ -41,7 +41,7 @@
     (.initial b (reify Supplier (get [_] (->json initial))))
     (when durability (.durability b (Durability/parse (clojure.core/name durability))))
     (when mount (.mount b mount))
-    (doseq [{:keys [kind op-name http takes-arg f]} ops]
+    (doseq [{:keys [kind op-name http takes-arg param-name f]} ops]
       (let [query? (= kind :query)
             handler (reify CommandHandler
                       (handle [_ state arg]
@@ -53,6 +53,7 @@
                                   (throw (ex-info (str "command " op-name " must return [new-state result]") {})))
                                 (Reply/update (->json (first out)) (->json (second out))))))))]
         (.command b ^String op-name (if takes-arg Object Void) (boolean query?) handler)
+        (.describe b ^String op-name (if takes-arg [(EntityType$Param. param-name Object)] []) Object)
         (let [routes (select-keys http (keys http-keys))]
           (when (> (count routes) 1) (throw (ex-info (str op-name ": set at most one HTTP method") {})))
           (doseq [[k path] routes]
@@ -68,6 +69,7 @@
     (when-not (and (vector? params) (<= 1 (count params) 2))
       (throw (IllegalArgumentException. (str "defentity: " op-sym " takes [state] or [state arg]"))))
     `{:kind ~(keyword kind) :op-name ~(name op-sym) :http ~http :takes-arg ~(= 2 (count params))
+      :param-name ~(when (= 2 (count params)) (name (second params)))
       :f (fn ~params ~@body)}))
 
 (defmacro defentity

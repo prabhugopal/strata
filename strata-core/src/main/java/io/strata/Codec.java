@@ -7,7 +7,9 @@ import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.lang.reflect.Type;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Encodes state, arguments and results as JSON so they can cross JVMs and be stored. Jackson
@@ -75,6 +77,52 @@ public final class Codec {
         } catch (IllegalArgumentException e) {
             throw new StrataException(StrataException.Kind.INVALID_ARGUMENT, "Can't convert argument to " + type.getTypeName() + ": " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * A JSON-Schema-like description of {@code type} (type, items, properties, enum), for tools
+     * that build forms. Deeper than {@code maxDepth}, or recursive, types are described as {@code {}} (anything).
+     */
+    public Map<String, Object> schema(Type type, int maxDepth) {
+        return schema(mapper.constructType(type), maxDepth, new java.util.HashSet<>());
+    }
+
+    private Map<String, Object> schema(JavaType t, int depth, java.util.Set<Class<?>> seen) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        Class<?> c = t.getRawClass();
+        if (c == boolean.class || c == Boolean.class) out.put("type", "boolean");
+        else if (c == int.class || c == long.class || c == short.class || c == byte.class || c == Integer.class || c == Long.class
+                || c == Short.class || c == Byte.class || c == java.math.BigInteger.class) out.put("type", "integer");
+        else if (c == double.class || c == float.class || c == Double.class || c == Float.class || c == java.math.BigDecimal.class) out.put("type", "number");
+        else if (c == String.class || c == char.class || c == Character.class || CharSequence.class.isAssignableFrom(c)) out.put("type", "string");
+        else if (c.isEnum()) {
+            out.put("type", "string");
+            out.put("enum", java.util.Arrays.stream(c.getEnumConstants()).map(Object::toString).toList());
+        } else if (depth <= 0 || c == Object.class || com.fasterxml.jackson.databind.JsonNode.class.isAssignableFrom(c) || !seen.add(c)) {
+            return out; // anything
+        } else if (t.isArrayType() || t.isCollectionLikeType()) {
+            out.put("type", "array");
+            out.put("items", schema(t.getContentType(), depth - 1, seen));
+        } else if (t.isMapLikeType()) {
+            out.put("type", "object");
+            out.put("additionalProperties", schema(t.getContentType(), depth - 1, seen));
+        } else if (t.isReferenceType()) { // Optional<T>
+            out.putAll(schema(t.getReferencedType(), depth - 1, seen));
+            out.put("nullable", true);
+        } else if (c.getName().startsWith("java.time.")) {
+            out.put("type", "string");
+            out.put("format", c.getSimpleName());
+        } else {
+            Map<String, Object> props = new LinkedHashMap<>();
+            var bean = mapper.getDeserializationConfig().introspect(t);
+            for (var p : bean.findProperties()) {
+                if (p.couldDeserialize()) props.put(p.getName(), schema(p.getPrimaryType(), depth - 1, seen));
+            }
+            out.put("type", "object");
+            out.put("properties", props);
+        }
+        seen.remove(c);
+        return out;
     }
 
     /** A deep copy through JSON: what the store would hold. */

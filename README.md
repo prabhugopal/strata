@@ -111,6 +111,26 @@ Strata restores them on load. Scala collections work with `jackson-module-scala`
 classpath. The builder API (`EntityType.builder`) remains for anything the annotations don't
 cover. Spring is never required.
 
+## Management API
+
+Served on the same HTTP server as entity routes (strata-http or Spring), under
+`strata.management.base-path` (`/strata`). The strata CLI and Stratum use it.
+
+| Endpoint | What |
+|---|---|
+| `GET /strata/info` | Node, version, store, uptime, settings summary |
+| `GET /strata/cluster` | Members, leader, entities per type per node |
+| `GET /strata/types` | Entity types, commands with parameter/result schemas, routes |
+| `GET /strata/types/{type}/entities?after=&limit=` | Stored and in-memory entities, paged by id |
+| `GET /strata/types/{type}/entities/{id}` | State, revision, whether it's in memory |
+| `POST /strata/types/{type}/entities/{id}/{command}` | Run a command (JSON in, JSON out) |
+| `GET /strata/events?after=&type=&id=` | Recent events on this node (activated, command, failed, stopped…) |
+| `GET /strata/metrics` | Prometheus: commands by outcome, latency histograms, commits, live entities |
+
+Set `strata.management.token` (`STRATA_MANAGEMENT_TOKEN`) to require a bearer token, and
+`allow-invoke = false` for read-only. Limits, event capacity, histogram buckets and schema depth
+are all settings.
+
 ## Configuration
 
 Nothing is hard-coded: every default lives in a module's `reference.conf`, and code reads settings
@@ -179,12 +199,14 @@ Kubernetes pod spec).
   method 405, conflict 409, handler failure 422, unavailable 503.
 - Annotated entities: several parameters, generic parameters and results, void commands,
   queries with arguments, discovery on and off, state across restarts.
+- The management API end to end over HTTP: describe, list, read, run, events, cluster, metrics,
+  token and read-only mode.
 - Annotation mistakes fail compilation with a message on the offending element.
 - Bad configuration fails at startup.
 - The same API works from Java, Kotlin, Scala 3 and Clojure.
 
 ## Next
 
-Management API and Stratum connection · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
+Stratum connection · Gradle plugin and strata CLI · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
 signals · M3 three-node cluster on Kubernetes (bootstrap, lease, rolling restarts) · M4 management API
 and metrics for Stratum · M5 Spring AI agent. PostgreSQL integration tests need Docker (Testcontainers).

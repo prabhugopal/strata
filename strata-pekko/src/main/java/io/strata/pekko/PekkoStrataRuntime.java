@@ -8,6 +8,9 @@ import io.strata.StrataRuntime;
 import io.strata.StrataSettings;
 import io.strata.TypeRef;
 import io.strata.StrataException.Kind;
+import io.strata.management.Introspection;
+import io.strata.management.ManagementSettings;
+import io.strata.management.Observability;
 import io.strata.spi.RuntimeProvider;
 import io.strata.spi.StateStore;
 import io.strata.spi.StateStores;
@@ -24,6 +27,7 @@ import org.apache.pekko.cluster.typed.Join;
 
 import java.lang.reflect.Type;
 import java.util.Collection;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletionStage;
@@ -42,6 +46,9 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     private final ActorSystem<Void> system;
     private final ClusterSharding sharding;
     private final Map<String, Registered<?>> types = new LinkedHashMap<>(); // guarded by itself
+    private final java.time.Instant startedAt = java.time.Instant.now();
+    private final Observability observability;
+    private final String node;
     private final java.util.Deque<AutoCloseable> closeWith = new java.util.concurrent.ConcurrentLinkedDeque<>();
 
     private record Registered<S>(EntityType<S> type, EntityTypeKey<Msg> key) {}
@@ -55,6 +62,8 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         this.system = ActorSystem.create(Behaviors.empty(), pekko.systemName(), pekko.systemConfig());
         this.sharding = ClusterSharding.get(system);
         Cluster cluster = Cluster.get(system);
+        this.node = cluster.selfMember().address().toString();
+        this.observability = new Observability(ManagementSettings.from(settings.config()), () -> node);
         if (pekko.clusterMode().equals("single")) {
             cluster.manager().tell(Join.create(cluster.selfMember().address()));
         }
@@ -83,7 +92,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
                 throw new StrataException("A different entity type named \"" + type.name() + "\" is already registered");
             }
         }
-        var deps = new EntityActor.Deps(codec, store, type.durability(settings), settings.passivateAfter(), pekko.stashCapacity());
+        var deps = new EntityActor.Deps(codec, store, type.durability(settings), settings.passivateAfter(), pekko.stashCapacity(), observability);
         sharding.init(Entity.of(key, ctx -> EntityActor.create(type, ctx.getEntityId(), deps, ctx.getShard()))
                 .withStopMessage(Stop.INSTANCE));
     }
@@ -109,6 +118,43 @@ public final class PekkoStrataRuntime implements StrataRuntime {
 
     @Override
     public StrataSettings settings() { return settings; }
+
+    @Override
+    public Introspection introspection() { return introspection; }
+
+    private final Introspection introspection = new Introspection() {
+        @Override public String node() { return node; }
+        @Override public java.time.Instant startedAt() { return startedAt; }
+        @Override public Observability observability() { return observability; }
+        @Override public StateStore store() { return store; }
+
+        @Override
+        public CompletionStage<ClusterView> cluster() {
+            var state = Cluster.get(system).state();
+            var unreachable = new java.util.HashSet<org.apache.pekko.cluster.Member>();
+            state.getUnreachable().forEach(unreachable::add);
+            List<Member> members = new java.util.ArrayList<>();
+            state.getMembers().forEach(m -> members.add(new Member(m.address().toString(), m.status().toString(),
+                    java.util.Set.copyOf(m.getRoles()), !unreachable.contains(m))));
+            String leader = state.getLeader() == null ? null : state.getLeader().toString();
+            List<Registered<?>> regs;
+            synchronized (types) { regs = List.copyOf(types.values()); }
+            Map<String, Map<String, Integer>> byType = new java.util.concurrent.ConcurrentHashMap<>();
+            var asks = regs.stream().map(r -> AskPattern.<org.apache.pekko.cluster.sharding.typed.ClusterShardingQuery, org.apache.pekko.cluster.sharding.ShardRegion.ClusterShardingStats>ask(
+                            sharding.shardState(),
+                            replyTo -> new org.apache.pekko.cluster.sharding.typed.GetClusterShardingStats(r.key(), settings.callTimeout(), replyTo),
+                            settings.callTimeout(), system.scheduler())
+                    .thenAccept(stats -> {
+                        Map<String, Integer> perNode = new java.util.TreeMap<>();
+                        stats.getRegions().forEach((address, region) ->
+                                perNode.put(address.toString(), region.getStats().values().stream().mapToInt(v -> ((Number) v).intValue()).sum()));
+                        byType.put(r.type().name(), perNode);
+                    }).toCompletableFuture())
+                    .toArray(java.util.concurrent.CompletableFuture[]::new);
+            return java.util.concurrent.CompletableFuture.allOf(asks)
+                    .thenApply(v -> new ClusterView(node, leader, members, new java.util.TreeMap<>(byType)));
+        }
+    };
 
     /** The node's actor system, for modules built on Pekko (e.g. strata-http). */
     public ActorSystem<Void> actorSystem() { return system; }

@@ -3,6 +3,7 @@ package io.strata.spring;
 import io.strata.StrataRuntime;
 import io.strata.http.LiveRoutes;
 import io.strata.http.RouteTable;
+import io.strata.management.ManagementApi;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
@@ -37,10 +38,28 @@ public class StrataWebFluxRoutes {
         String basePath = http.getString("base-path");
         int maxBodyBytes = Math.toIntExact(http.getBytes("max-body-bytes"));
         LiveRoutes routes = new LiveRoutes(runtime, basePath);
+        ManagementApi management = new ManagementApi(runtime);
         return request -> {
+            if (management.handles(request.path())) {
+                return Mono.just(req -> manage(management, req, maxBodyBytes));
+            }
             Optional<RouteTable.Match> match = routes.current().match(request.method().name(), request.path());
             return Mono.justOrEmpty(match.<HandlerFunction<ServerResponse>>map(m -> req -> handle(runtime, m, req, maxBodyBytes)));
         };
+    }
+
+    private static Mono<ServerResponse> manage(ManagementApi management, ServerRequest req, int maxBodyBytes) {
+        return DataBufferUtils.join(req.bodyToFlux(org.springframework.core.io.buffer.DataBuffer.class), maxBodyBytes)
+                .map(buf -> {
+                    byte[] bytes = new byte[buf.readableByteCount()];
+                    buf.read(bytes);
+                    DataBufferUtils.release(buf);
+                    return bytes;
+                })
+                .defaultIfEmpty(new byte[0])
+                .flatMap(body -> Mono.fromCompletionStage(management.handle(req.method().name(), req.path(),
+                        ManagementApi.parseQuery(req.uri().getRawQuery()), body, req.headers().firstHeader("Authorization"))))
+                .flatMap(r -> ServerResponse.status(r.status()).contentType(MediaType.parseMediaType(r.contentType())).bodyValue(r.body()));
     }
 
     private static Mono<ServerResponse> handle(StrataRuntime runtime, RouteTable.Match m, ServerRequest req, int maxBodyBytes) {

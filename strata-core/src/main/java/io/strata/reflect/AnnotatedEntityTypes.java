@@ -104,6 +104,11 @@ public final class AnnotatedEntityTypes {
                 Object result = invoke(m, state, args);
                 return readOnly ? Reply.read(result) : Reply.update(state, returnsVoid ? null : result);
             });
+            List<EntityType.Param> described = new ArrayList<>();
+            for (int i = 0; i < params.length; i++) {
+                described.add(new EntityType.Param(params[i].isNamePresent() ? params[i].getName() : "arg" + i, types[i]));
+            }
+            b.describe(command, described, returnsVoid ? Void.class : m.getGenericReturnType());
         }
         if (commands.isEmpty()) throw invalid(cls, "has no @Command or @Query methods");
         return b.build();

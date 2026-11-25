@@ -29,7 +29,18 @@ import java.util.function.Supplier;
 public final class EntityType<S> {
 
     /** One command: its argument type ({@code Void.class} for none; may be generic) and handler. */
-    public record CommandDef<S>(String name, java.lang.reflect.Type argType, boolean readOnly, CommandHandler<S, Object, Object> handler) {}
+    public record CommandDef<S>(String name, java.lang.reflect.Type argType, boolean readOnly, CommandHandler<S, Object, Object> handler,
+                                List<Param> params, java.lang.reflect.Type resultType) {
+        CommandDef(String name, java.lang.reflect.Type argType, boolean readOnly, CommandHandler<S, Object, Object> handler) {
+            this(name, argType, readOnly, handler, null, null);
+        }
+    }
+
+    /**
+     * A named parameter, for tools that build forms. One parameter is sent as the value itself;
+     * several as a JSON object by name.
+     */
+    public record Param(String name, java.lang.reflect.Type type) {}
 
     /** An HTTP route to a command, relative to the type's {@link #mount()}. */
     public record Route(String method, String path, String command) {}
@@ -189,6 +200,17 @@ public final class EntityType<S> {
         @SuppressWarnings("unchecked")
         public <A, R> Builder<S> query(String name, TypeRef<A> argType, QueryHandler<S, A, R> read) {
             return add(new CommandDef<>(name, argType.type(), true, (s, a) -> Reply.read(read.read(s, (A) a))));
+        }
+
+        /**
+         * Describe a command's parameters and result for tools (forms, docs). Optional: commands
+         * without a description are still callable; tools then show only the argument type.
+         */
+        public Builder<S> describe(String command, List<Param> params, java.lang.reflect.Type resultType) {
+            CommandDef<S> c = commands.get(command);
+            if (c == null) throw new IllegalArgumentException("describe(): no command \"" + command + "\" on entity type " + name);
+            commands.put(command, new CommandDef<>(c.name(), c.argType(), c.readOnly(), c.handler(), List.copyOf(params), resultType));
+            return this;
         }
 
         private Builder<S> add(CommandDef<S> def) {
