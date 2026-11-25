@@ -169,8 +169,8 @@ Build settings live in `gradle.properties`; dependency versions only in `gradle/
 
 | Property | Meaning |
 |---|---|
-| `strata.java.release` | Java version Strata targets (25) |
-| `strata.java.toolchain` | Installed JDK that builds and tests (must be ≥ release) |
+| `strata.java.release` | Lowest Java version Strata runs on (21, the LTS most teams run; it needs virtual threads). Apps can run it on any newer JDK. |
+| `strata.java.toolchain` | Installed JDK that builds and tests (must be ≥ release); override per machine with `-Pstrata.java.toolchain=…` or `~/.gradle/gradle.properties` |
 | `strata.jvm.args` | JVM flags every Strata process needs (applied to tests, examples and start scripts) |
 
 ```sh
