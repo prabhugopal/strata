@@ -127,6 +127,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         @Override public java.time.Instant startedAt() { return startedAt; }
         @Override public Observability observability() { return observability; }
         @Override public StateStore store() { return store; }
+        @Override public boolean ready() { return Cluster.get(system).selfMember().status() == MemberStatus.up(); }
 
         @Override
         public CompletionStage<ClusterView> cluster() {

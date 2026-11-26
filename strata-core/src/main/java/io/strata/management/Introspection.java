@@ -21,6 +21,9 @@ public interface Introspection {
 
     CompletionStage<ClusterView> cluster();
 
+    /** Whether this node can take traffic: it has joined its cluster and is up. */
+    boolean ready();
+
     /** The cluster as this node sees it, and how many entities of each type each node holds. */
     record ClusterView(String self, String leader, List<Member> members, Map<String, Map<String, Integer>> entitiesByTypeAndNode) {}
 

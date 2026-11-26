@@ -117,6 +117,8 @@ class ManagementApiTest {
     void tokenAndReadOnlyAreConfigurable() throws Exception {
         try (var strata = start(Map.of("strata.management.token", "s3cret", "strata.management.allow-invoke", false))) {
             assertEquals(401, call(strata, "GET", "/strata/info", null, null).statusCode());
+            assertEquals(200, call(strata, "GET", "/strata/health/live", null, null).statusCode(), "probes need no token");
+            assertEquals(200, call(strata, "GET", "/strata/health/ready", null, null).statusCode());
             assertEquals(401, call(strata, "GET", "/strata/info", null, "wrong").statusCode());
             assertEquals(200, call(strata, "GET", "/strata/info", null, "s3cret").statusCode());
             assertEquals(403, call(strata, "POST", "/strata/types/counter/entities/a/increment", null, "s3cret").statusCode());

@@ -36,6 +36,7 @@ import java.util.concurrent.CompletionStage;
  * POST /types/{type}/entities/{id}/{command}   run a command (JSON argument → JSON result)
  * GET  /events?after=&limit=&type=&id=         recent events on this node
  * GET  /metrics                                Prometheus text format
+ * GET  /health/live, /health/ready             probes (no token): process up / joined its cluster
  * </pre>
  */
 public final class ManagementApi {
@@ -66,9 +67,16 @@ public final class ManagementApi {
 
     public CompletionStage<Response> handle(String method, String path, Map<String, String> query, byte[] body, String authorization) {
         try {
-            if (!authorized(authorization)) return done(error(401, "management API needs \"Authorization: Bearer <token>\" (strata.management.token)"));
             List<String> seg = segments(path.substring(settings.basePath().length()));
             boolean get = method.equalsIgnoreCase("GET");
+            // Probes for orchestrators (Kubernetes); no token, and they reveal nothing else.
+            if (get && seg.equals(List.of("health", "live"))) return done(ok(json.createObjectNode().put("status", "live")));
+            if (get && seg.equals(List.of("health", "ready"))) {
+                boolean ready = runtime.introspection().ready();
+                ObjectNode o = json.createObjectNode().put("status", ready ? "ready" : "not ready");
+                return done(ready ? ok(o) : new Response(503, JSON, o.toString().getBytes(StandardCharsets.UTF_8)));
+            }
+            if (!authorized(authorization)) return done(error(401, "management API needs \"Authorization: Bearer <token>\" (strata.management.token)"));
             if (get && seg.equals(List.of("info"))) return done(ok(info()));
             if (get && seg.equals(List.of("cluster"))) return cluster();
             if (get && seg.equals(List.of("types"))) return done(ok(types()));

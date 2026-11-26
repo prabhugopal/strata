@@ -11,6 +11,11 @@ record PekkoSettings(String clusterMode, Duration startupTimeout, Duration start
         Config c = root.getConfig("strata.pekko");
         // strata.pekko.system.* wins over plain pekko.* so Strata's required defaults apply.
         Config system = c.getConfig("system").withoutPath("name").withFallback(root);
+        java.util.List<String> seeds = java.util.Arrays.stream(c.getString("seed-nodes").split(","))
+                .map(String::trim).filter(x -> !x.isEmpty()).toList();
+        if (!seeds.isEmpty()) {
+            system = com.typesafe.config.ConfigFactory.parseMap(java.util.Map.of("pekko.cluster.seed-nodes", seeds)).withFallback(system);
+        }
         String mode = c.getString("cluster-mode");
         if (!mode.equals("single") && !mode.equals("seed-nodes")) {
             throw new IllegalArgumentException("strata.pekko.cluster-mode must be \"single\" or \"seed-nodes\", not \"" + mode + "\"");
