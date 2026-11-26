@@ -3,6 +3,21 @@
 What's next for Strata and Stratum, and ideas worth keeping. Each item says where it came from and
 its state; move items to the README's status once they're built and tested.
 
+## How an idea gets in
+
+Strata stays simple: business code is plain classes, everything else is configuration. An idea
+is added only if all of these hold:
+
+1. **It solves a problem users have now**, not one that might come later.
+2. **Code that doesn't use it doesn't change**: no new required annotation, setting, dependency
+   or step; it costs nothing when unused.
+3. **It's optional and off by default**, or on by default only when it changes nothing visible.
+4. **It reuses what's there** (Pekko, the store, the journal, the plugin) before adding a part.
+5. **It's configurable, not hard-coded**, and listed in the generated configuration reference.
+6. **It's explained in a sentence**: if it needs a new concept to understand, it waits.
+
+Ideas that don't pass stay under "Ideas to weigh separately", not in the plan.
+
 ## Next, in order
 
 1. **`ctx.callKey()`: exactly-once at the edge.** A service call in flight when a node dies (the
