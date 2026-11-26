@@ -56,6 +56,7 @@ public final class JdbcStateStore implements StateStore {
         hc.setConnectionTimeout(c.getDuration("pool.connection-timeout").toMillis());
         hc.setIdleTimeout(c.getDuration("pool.idle-timeout").toMillis());
         hc.setMaxLifetime(c.getDuration("pool.max-lifetime").toMillis());
+        hc.setInitializationFailTimeout(c.getDuration("pool.initialization-timeout").toMillis());
         this.pool = new com.zaxxer.hikari.HikariDataSource(hc);
         try {
             if (c.getBoolean("create-schema")) createSchema();
@@ -82,7 +83,20 @@ public final class JdbcStateStore implements StateStore {
                     + "revision BIGINT NOT NULL, state " + blobType(c) + " NOT NULL, updated_at TIMESTAMP NOT NULL, "
                     + "PRIMARY KEY (entity_type, entity_id))");
         } catch (SQLException e) {
+            // Several nodes starting together may race to create it (PostgreSQL's IF NOT EXISTS
+            // isn't safe against that); if it exists now, another node won.
+            if (tableExists()) return;
             throw new StrataException("Can't create table " + table + " at " + url, e);
+        }
+    }
+
+    private boolean tableExists() {
+        try (Connection c = connect(); var st = c.createStatement()) {
+            st.setQueryTimeout(timeoutSeconds);
+            st.executeQuery("SELECT 1 FROM " + table + " WHERE 1 = 0").close();
+            return true;
+        } catch (SQLException e) {
+            return false;
         }
     }
 

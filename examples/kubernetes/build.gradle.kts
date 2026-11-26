@@ -16,9 +16,10 @@ application { mainClass.set("io.strata.examples.k8s.Main") }
 
 strata {
     kubernetes {
-        replicas.set(3)
+        // Override with -Preplicas=… -Pmemory=… (e.g. on a small minikube).
+        replicas.set(providers.gradleProperty("replicas").map(String::toInt).orElse(3))
         // Small enough for a laptop minikube; raise for real workloads.
-        memory.set("384Mi")
+        memory.set(providers.gradleProperty("memory").orElse("384Mi"))
         cpu.set("250m")
     }
 }
