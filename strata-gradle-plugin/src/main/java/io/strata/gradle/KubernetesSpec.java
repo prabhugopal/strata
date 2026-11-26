@@ -38,6 +38,9 @@ public abstract class KubernetesSpec {
      */
     public abstract Property<String> getTlsSecret();
 
+    /** How long a node may take to start before Kubernetes restarts it; liveness checks begin after. */
+    public abstract Property<Integer> getStartupSeconds();
+
     /** Split-brain strategy (strata.pekko.split-brain.strategy); lease-majority uses the shared database. */
     public abstract Property<String> getSplitBrain();
 

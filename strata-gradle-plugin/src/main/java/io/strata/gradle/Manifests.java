@@ -16,7 +16,7 @@ final class Manifests {
                   String serviceType, String cpu, String memory, int maxRamPercentage, int graceSeconds,
                   String managementBase, boolean postgres, String postgresImage, String postgresStorage,
                   String database, String user, String jdbcUrl, Map<String, String> env,
-                  String tlsSecret, String tlsMountPath, String splitBrain) {}
+                  String tlsSecret, String tlsMountPath, String splitBrain, int startupSeconds) {}
 
     static String app(Params p) {
         String cluster = p.name() + "-cluster";
@@ -107,13 +107,18 @@ final class Manifests {
                             - name: POD_NAME
                               valueFrom: {fieldRef: {fieldPath: metadata.name}}
                 %11$s
+                          # A node serves once it has joined its cluster; until then only this probe runs,
+                          # so a slow start isn't taken for a hang.
+                          startupProbe:
+                            httpGet: {path: %8$s/health/live, port: http}
+                            periodSeconds: 5
+                            failureThreshold: %15$d
                           readinessProbe:
                             httpGet: {path: %8$s/health/ready, port: http}
                             periodSeconds: 5
                           # Fails once the node has been removed from its cluster, so it's restarted and rejoins.
                           livenessProbe:
                             httpGet: {path: %8$s/health/live, port: http}
-                            initialDelaySeconds: 30
                             periodSeconds: 10
                           resources:
                             requests: {cpu: %12$s, memory: %13$s}
@@ -136,7 +141,8 @@ final class Manifests {
                             - {name: tls, mountPath: %s, readOnly: true}
                       volumes:
                         - name: tls
-                          secret: {secretName: %s}""".formatted(p.tlsMountPath(), p.tlsSecret()).stripIndent().indent(6).stripTrailing() : "");
+                          secret: {secretName: %s}""".formatted(p.tlsMountPath(), p.tlsSecret()).stripIndent().indent(6).stripTrailing() : "",
+                Math.max(1, (p.startupSeconds() + 4) / 5));
     }
 
     /** The Secret with database credentials (shared by the app and the development database). */

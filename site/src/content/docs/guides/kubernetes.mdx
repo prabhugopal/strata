@@ -22,6 +22,24 @@ strata {
 }
 ```
 
+## Probes and restarts
+
+| Probe | Path | What it means |
+|---|---|---|
+| startup | `/strata/health/live` | The node has started; until then (up to `startupSeconds`, 180 s by default) no other probe runs, so a slow start isn't taken for a hang |
+| readiness | `/strata/health/ready` | The node has joined its cluster and takes traffic |
+| liveness | `/strata/health/live` | Fails once the node has been removed from its cluster: Kubernetes restarts it and it joins again |
+
+Split-brain handling defaults to `lease-majority` here (`splitBrain`), so a 2-node or even-sized
+cluster keeps running when a node dies.
+
+:::caution[Some settings need a full restart, not a rolling update]
+Pekko refuses to let a node join a cluster whose split-brain settings differ from its own
+("incompatible cluster configuration"), so changing `splitBrain` (or the Pekko settings behind it)
+with a rolling update leaves the new pods crash-looping. Stop all nodes and start them again:
+`kubectl delete pod -l app.kubernetes.io/name=<name>`.
+:::
+
 ## Encrypting traffic between nodes
 
 `tlsSecret` names a Secret holding `tls.key`, `tls.crt` and `ca.crt`. The plugin mounts it and
