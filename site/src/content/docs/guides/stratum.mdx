@@ -1,17 +1,28 @@
 ---
 title: Observing with Stratum
-description: A desktop app that watches Strata nodes.
+description: A desktop app that watches Strata nodes (and Golem servers).
 ---
 
-Stratum connects to a node's management API. Add a server (Servers → Strata) with its URL and,
-if the node sets `strata.management.token`, the token; Stratum keeps it on disk readable only by
-you and never shows it in the UI.
+Stratum is a desktop app that connects to a node's [management API](../../reference/management-api/).
+It lists every server it watches under **Connections**, Strata nodes and Golem servers side by
+side, like a database client's connections; pick one in the top bar.
+
+To add a node: **Connections → Add connection → Strata**, with its URL and, if the node sets
+`strata.management.token`, the token. Stratum keeps it on disk readable only by you and never
+shows it in the UI. Nothing else is needed: the `golem` CLI is only for Golem connections.
 
 - **Entities**: every type, stored and in-memory entities, each one's state and revision, and a
   form to run any command (built from its parameter types).
-- **Activity**: commands, failures, entities loading and unloading, resumed and stalled commands.
+- **Activity**: commands, failures, entities loading and unloading, resumed and stalled commands,
+  and nodes joining or leaving.
 - **Metrics**: commands per second, latency percentiles, commits, entities in memory.
-- **Cluster**: the nodes, the leader, and where entities live.
+- **Cluster**: one card per node with its status (unreachable nodes marked), leader, oldest and
+  lease-holder badges, and its in-memory entities as dots per type (click a type to open it);
+  above them the split-brain strategy, who holds the lease, and whether traffic between nodes is
+  encrypted; below, recent cluster events. Stop a node and watch its entities move to the others.
 
-Marking a server read-only in Stratum stops it running commands, and every command it runs is
+Dots come and go: an idle entity is unloaded after `strata.entity.passivate-after` and loads again
+on its next request, with its state.
+
+Marking a connection read-only in Stratum stops it running commands, and every command it runs is
 written to its audit log.

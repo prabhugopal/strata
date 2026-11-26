@@ -10,14 +10,39 @@ to make it read-only.
 | Endpoint | What |
 |---|---|
 | `GET /strata/info` | Node, version, store, uptime |
-| `GET /strata/cluster` | Members, leader, entities per type per node |
+| `GET /strata/cluster` | Members, leader, oldest node, entities per type per node, TLS, split-brain strategy and lease holder ([below](#the-cluster)) |
 | `GET /strata/types` | Entity types, commands with parameter and result schemas, routes |
 | `GET /strata/types/{type}/entities?after=&limit=` | Stored and in-memory entities, paged by id |
 | `GET /strata/types/{type}/entities/{id}` | State, revision, whether it's in memory |
 | `POST /strata/types/{type}/entities/{id}/{command}` | Run a command (JSON in, JSON out); honours `Idempotency-Key` |
-| `GET /strata/events?after=&type=&id=` | Recent events on this node |
+| `GET /strata/events?after=&type=&id=` | Recent events on this node; `type=cluster` for nodes joining, unreachable, reachable, downed, removed |
 | `GET /strata/metrics` | Prometheus text: commands by outcome, latency, commits, live entities, resumed and stalled |
-| `GET /strata/health/live`, `/strata/health/ready` | Probes, no token needed |
+| `GET /strata/health/live`, `/strata/health/ready` | Probes, no token needed. `live` answers 503 once the node has been removed from its cluster, so it's restarted and joins again |
+
+## The cluster
+
+```json
+{
+  "self": "pekko://strata@10.0.0.5:25520",
+  "leader": "pekko://strata@10.0.0.5:25520",
+  "oldest": "pekko://strata@10.0.0.5:25520",
+  "members": [
+    {"address": "pekko://strata@10.0.0.5:25520", "status": "Up", "roles": ["dc-default"], "reachable": true, "upNumber": 1},
+    {"address": "pekko://strata@10.0.0.6:25520", "status": "Up", "roles": ["dc-default"], "reachable": true, "upNumber": 2}
+  ],
+  "entitiesByTypeAndNode": {"order": {"pekko://strata@10.0.0.5:25520": 9, "pekko://strata@10.0.0.6:25520": 9}},
+  "tls": "pem",
+  "splitBrain": {"strategy": "lease-majority", "stableAfter": "20s", "leaseName": "strata-pekko-sbr", "leaseHolder": null}
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `leader` | Pekko's cluster leader: moves members between states |
+| `oldest` | The member that became Up first (lowest `upNumber`); shard coordinators run there |
+| `entitiesByTypeAndNode` | Entities **in memory** now. Idle ones are unloaded after `strata.entity.passivate-after` (2 minutes) and load again on their next request, so counts going to 0 is normal |
+| `tls` | `off`, `keystore` or `pem` ([TLS](../../concepts/clusters/#encrypting-traffic-between-nodes)) |
+| `splitBrain.leaseHolder` | Under `lease-majority`, the node holding the lease, or `null` while nobody needs it (it's taken when a node loses sight of others) |
 
 Errors come back as `{"error": "…"}` with a status from their kind: 400 bad argument, 404 not
 found, 409 conflict, 422 the command failed, 503 unavailable.
