@@ -17,8 +17,30 @@ strata {
         load.set("push")                       // minikube (default) | kind | push | none
         postgres.set(false)
         jdbcUrl.set("jdbc:postgresql://orders-db:5432/strata")
+        tlsSecret.set("accounts-tls")          // encrypt traffic between nodes
     }
 }
+```
+
+## Encrypting traffic between nodes
+
+`tlsSecret` names a Secret holding `tls.key`, `tls.crt` and `ca.crt`. The plugin mounts it and
+turns on TLS between nodes; certificates are reread as they rotate, without restarting pods. With
+[cert-manager](https://cert-manager.io) and a CA issuer:
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: accounts-tls
+  namespace: shop
+spec:
+  secretName: accounts-tls
+  commonName: accounts-cluster            # the same name on every node's certificate
+  dnsNames: ["*.accounts-cluster.shop.svc.cluster.local"]
+  privateKey: {algorithm: RSA, size: 2048, encoding: PKCS8}   # Pekko needs RSA
+  usages: [server auth, client auth]
+  issuerRef: {name: strata-ca, kind: Issuer}                  # a root CA issuer
 ```
 
 | Task | Does |

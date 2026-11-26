@@ -122,13 +122,15 @@ An alpha: the core is built and tested, not yet run in production.
 - Two-node clusters and a 2-pod minikube deployment: entities spread, a node or pod is deleted,
   every entity answers from the survivor with its state; the replacement rejoins.
 - The seal refuses clocks, randomness, threads, I/O and reflection, with class, method and line.
+- Node-to-node TLS with mutual authentication (keystores, or rotating PEM files from cert-manager):
+  encrypted clusters form, and a node without TLS can't join.
 - The JDBC store's contract on H2 and PostgreSQL 17: concurrent schema creation, fencing, record
   and commit in one transaction, timers claimed by two nodes without overlap.
 - The same entities from Java, Kotlin, Scala 3 and Clojure; Spring Boot optional.
 
 **Not done yet:**
 
-- Encrypted node-to-node traffic (Pekko Artery TLS) and lease-based split-brain protection.
+- Lease-based split-brain protection on Kubernetes.
 - Load tests on dedicated hardware (laptop numbers are in [docs/benchmarks.md](docs/benchmarks.md)).
 - Publishing artifacts to Maven Central (until then: `./gradlew publishAllPublicationsToLocalRepository`).
 - Keeping each entity's full history, and operations on it (interrupt, cancel, revert).

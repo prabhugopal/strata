@@ -15,7 +15,8 @@ final class Manifests {
     record Params(String name, String namespace, String image, int replicas, int httpPort, int remotingPort,
                   String serviceType, String cpu, String memory, int maxRamPercentage, int graceSeconds,
                   String managementBase, boolean postgres, String postgresImage, String postgresStorage,
-                  String database, String user, String jdbcUrl, Map<String, String> env) {}
+                  String database, String user, String jdbcUrl, Map<String, String> env,
+                  String tlsSecret, String tlsMountPath) {}
 
     static String app(Params p) {
         String cluster = p.name() + "-cluster";
@@ -36,6 +37,12 @@ final class Manifests {
         env.append(secretEnv("STRATA_JDBC_USER", p.name() + "-db", "user"));
         env.append(secretEnv("STRATA_JDBC_PASSWORD", p.name() + "-db", "password"));
         env(env, "JAVA_OPTS", "-XX:MaxRAMPercentage=" + p.maxRamPercentage());
+        boolean tls = p.tlsSecret() != null && !p.tlsSecret().isBlank();
+        if (tls) {
+            // Node-to-node TLS from PEM files that the Secret's owner (e.g. cert-manager) rotates.
+            env(env, "STRATA_TLS", "pem");
+            env(env, "STRATA_TLS_DIR", p.tlsMountPath());
+        }
         p.env().forEach((k, v) -> env(env, k, v));
 
         return """
@@ -109,6 +116,7 @@ final class Manifests {
                           resources:
                             requests: {cpu: %12$s, memory: %13$s}
                             limits: {memory: %13$s}
+                %14$s
                 ---
                 apiVersion: policy/v1
                 kind: PodDisruptionBudget
@@ -120,7 +128,13 @@ final class Manifests {
                   selector:
                     matchLabels: {app.kubernetes.io/name: %2$s}
                 """.formatted(cluster, p.name(), p.namespace(), p.remotingPort(), p.serviceType(), p.httpPort(), p.replicas(),
-                p.managementBase(), p.graceSeconds(), p.image(), env.toString().stripTrailing(), p.cpu(), p.memory());
+                p.managementBase(), p.graceSeconds(), p.image(), env.toString().stripTrailing(), p.cpu(), p.memory(),
+                tls ? """
+                          volumeMounts:
+                            - {name: tls, mountPath: %s, readOnly: true}
+                      volumes:
+                        - name: tls
+                          secret: {secretName: %s}""".formatted(p.tlsMountPath(), p.tlsSecret()).stripIndent().indent(6).stripTrailing() : "");
     }
 
     /** The Secret with database credentials (shared by the app and the development database). */

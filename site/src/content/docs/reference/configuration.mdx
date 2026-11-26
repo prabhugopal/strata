@@ -67,6 +67,15 @@ The Pekko runtime: clustering.
 | `strata.pekko.seed-nodes` | `""` | `STRATA_SEED_NODES` | With cluster-mode = seed-nodes: the seed node addresses, comma-separated, e.g. "pekko://strata@app-0.app-cluster:25520,pekko://strata@app-1.app-cluster:25520". Empty keeps strata.pekko.system.pekko.cluster.seed-nodes as configured. |
 | `strata.pekko.startup-timeout` | `30s` |  | How long start() waits for this node to become a cluster member. |
 | `strata.pekko.startup-poll-interval` | `20ms` |  | How often start() checks whether the node has joined. |
+| `strata.pekko.tls.mode` | `"off"` | `STRATA_TLS` | off      - plain TCP (development) keystore - JKS or PKCS12 key and trust stores (the settings below) pem      - PEM files in a directory, as cert-manager and other secret managers write them:            tls.key (RSA, PKCS#1 or unencrypted PKCS#8), tls.crt, ca.crt. Reread as they            rotate; all nodes' certificates must share a subject name (CN or SAN). |
+| `strata.pekko.tls.keystore.key-store` | `""` | `STRATA_TLS_KEY_STORE` |  |
+| `strata.pekko.tls.keystore.key-store-password` | `""` | `STRATA_TLS_KEY_STORE_PASSWORD` |  |
+| `strata.pekko.tls.keystore.key-password` | `""` | `STRATA_TLS_KEY_PASSWORD` | The key's own password; empty means the key store's. |
+| `strata.pekko.tls.keystore.trust-store` | `""` | `STRATA_TLS_TRUST_STORE` |  |
+| `strata.pekko.tls.keystore.trust-store-password` | `""` | `STRATA_TLS_TRUST_STORE_PASSWORD` |  |
+| `strata.pekko.tls.pem.directory` | `"/var/run/secrets/strata-tls"` | `STRATA_TLS_DIR` |  |
+| `strata.pekko.tls.pem.reload-after` | `5m` |  | How long a loaded certificate is used before the files are read again. |
+| `strata.pekko.tls.protocol` | `"TLSv1.3"` |  |  |
 | `strata.pekko.stash-capacity` | `1000` |  | Commands that arrive while an entity loads or commits wait in a buffer of this size. |
 | `strata.pekko.number-of-shards` | `1024` |  | Fixed for the cluster's lifetime: shards are the unit of placement and hand-over. |
 

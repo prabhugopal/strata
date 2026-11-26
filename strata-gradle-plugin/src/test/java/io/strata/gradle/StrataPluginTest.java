@@ -91,13 +91,15 @@ class StrataPluginTest {
     void kubernetesManifestsFollowTheStrataBlock() throws IOException {
         project("""
                 tasks.withType<JavaCompile>().configureEach { options.release.set(21) }
-                strata { kubernetes { replicas.set(2); namespace.set("shop"); env.put("STRATA_CALL_TIMEOUT", "5s") } }
+                strata { kubernetes { replicas.set(2); namespace.set("shop"); env.put("STRATA_CALL_TIMEOUT", "5s"); tlsSecret.set("demo-tls") } }
                 """);
         gradle("strataManifests", "strataDockerfile", "-q");
         String app = Files.readString(dir.resolve("build/strata/k8s/app.yaml"));
         assertTrue(app.contains("pekko://strata@demo-0.demo-cluster.shop.svc.cluster.local:25520,pekko://strata@demo-1.demo-cluster.shop.svc.cluster.local:25520\""), app);
         assertTrue(app.contains("replicas: 2") && app.contains("namespace: shop") && app.contains("/strata/health/ready"), app);
         assertTrue(app.contains("{name: STRATA_CALL_TIMEOUT, value: \"5s\"}"), app);
+        assertTrue(app.contains("{name: STRATA_TLS, value: \"pem\"}") && app.contains("secret: {secretName: demo-tls}")
+                && app.contains("mountPath: /var/run/secrets/strata-tls"), "TLS from the Secret:\n" + app);
         assertTrue(Files.readString(dir.resolve("build/strata/k8s/postgres.yaml")).contains("postgres:"));
         Path pw = dir.resolve(".strata/postgres-password");
         String first = Files.readString(pw);

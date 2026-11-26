@@ -27,3 +27,20 @@ the replacement pod rejoins the same cluster.
 - **`seed-nodes`** with `STRATA_SEED_NODES`: list every node. A restarted node then rejoins the
   others instead of starting a cluster of its own. The [Kubernetes guide](../../guides/kubernetes/)
   sets this up for you.
+
+## Encrypting traffic between nodes
+
+Entity calls travel between nodes, so in production encrypt them. With TLS on, nodes also
+**authenticate each other**: a node joins only if it presents a certificate the others trust, so a
+stranger on the network can't join the cluster (tested: a plain-TCP node is refused).
+
+| `strata.pekko.tls.mode` (`STRATA_TLS`) | Certificates from |
+|---|---|
+| `off` (default) | none: plain TCP, for development |
+| `keystore` | JKS or PKCS12 files: `STRATA_TLS_KEY_STORE`, `STRATA_TLS_TRUST_STORE` and their passwords |
+| `pem` | A directory with `tls.key`, `tls.crt`, `ca.crt` (`STRATA_TLS_DIR`), reread as they rotate: what cert-manager writes |
+
+Missing files or passwords stop the node at start with a message naming the setting. For `pem`,
+the key must be RSA, the node certificate must be issued directly by a root CA, and all nodes'
+certificates must share a subject name (CN or SAN). On Kubernetes, the [Gradle plugin](../../guides/kubernetes/)
+mounts the certificate Secret for you.

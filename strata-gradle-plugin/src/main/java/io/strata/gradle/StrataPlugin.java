@@ -132,6 +132,7 @@ public final class StrataPlugin implements Plugin<Project> {
         k.getPostgresDatabase().convention(d.getProperty("kubernetes.postgresDatabase"));
         k.getPostgresUser().convention(d.getProperty("kubernetes.postgresUser"));
         k.getJdbcUrl().convention("");
+        k.getTlsSecret().convention(d.getProperty("kubernetes.tlsSecret"));
         Provider<String> image = img.getName().zip(img.getTag(), (n, t) -> n + ":" + t);
         var build = project.getLayout().getBuildDirectory();
 
@@ -177,6 +178,8 @@ public final class StrataPlugin implements Plugin<Project> {
                 t.getUser().set(k.getPostgresUser());
                 t.getJdbcUrl().set(k.getJdbcUrl());
                 t.getEnv().set(k.getEnv());
+                t.getTlsSecret().set(k.getTlsSecret());
+                t.getTlsMountPath().set(d.getProperty("kubernetes.tlsMountPath"));
                 t.getPasswordFile().set(project.getLayout().getProjectDirectory().file(".strata/postgres-password"));
                 t.getOutput().set(build.dir("strata/k8s"));
             });

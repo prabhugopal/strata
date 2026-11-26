@@ -20,5 +20,7 @@ strata {
         // Small enough for a laptop minikube; raise for real workloads.
         memory.set(providers.gradleProperty("memory").orElse("384Mi"))
         cpu.set("250m")
+        // -PtlsSecret=<Secret with tls.key, tls.crt, ca.crt> encrypts traffic between nodes.
+        tlsSecret.set(providers.gradleProperty("tlsSecret").orElse(""))
     }
 }

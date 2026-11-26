@@ -32,6 +32,12 @@ public abstract class KubernetesSpec {
     public abstract Property<String> getPostgresUser();
     /** JDBC URL of an existing database (when postgres is off). Credentials come from Secret {@code <name>-db}. */
     public abstract Property<String> getJdbcUrl();
+    /**
+     * Encrypt traffic between nodes: the name of a Secret holding tls.key, tls.crt and ca.crt (what
+     * cert-manager creates from a Certificate). Empty: plain TCP between nodes.
+     */
+    public abstract Property<String> getTlsSecret();
+
     /** Extra environment variables for every node (any strata.* setting via its env var). */
     public abstract MapProperty<String, String> getEnv();
 }
