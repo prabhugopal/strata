@@ -123,8 +123,10 @@ An alpha: the core is built and tested, not yet run in production.
   every entity answers from the survivor with its state; the replacement rejoins.
 - The seal refuses clocks, randomness, threads, I/O and reflection, with class, method and line.
 - A 2-node cluster losing its lower-address node: under keep-majority the survivor stops itself;
-  under lease-majority (a lease in the store) it keeps serving every entity. A removed node fails
-  its liveness probe so Kubernetes restarts it.
+  under lease-majority (a lease in the store) it keeps serving every entity. On minikube with
+  PostgreSQL: one pod frozen (`SIGSTOP`), the other took the lease after the 20 s stability window
+  and served all 20 accounts within a minute; Kubernetes restarted the frozen pod (liveness) and it
+  rejoined, every balance intact.
 - Node-to-node TLS with mutual authentication (keystores, or rotating PEM files from cert-manager):
   encrypted clusters form, and a node without TLS can't join.
 - The JDBC store's contract on H2 and PostgreSQL 17: concurrent schema creation, fencing, record

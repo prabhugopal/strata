@@ -45,6 +45,11 @@ under `lease-majority` the survivor takes the lease, removes the dead node, and 
 entity, including those that lived on the dead one. Use `lease-majority` for 2 nodes or any even
 size; the Kubernetes manifests do by default.
 
+Also tested on Kubernetes (minikube, PostgreSQL): freezing one of two pods mid-traffic, the other
+took the lease after the 20 s stability window and served all 20 accounts within a minute,
+including the ten that lived on the frozen pod; Kubernetes then restarted the frozen pod and it
+rejoined with every balance intact.
+
 A node that has been removed reports itself not live (`/strata/health/live` answers 503), so
 Kubernetes restarts it and it joins again.
 
