@@ -14,6 +14,9 @@ public interface StrataRuntime extends AutoCloseable {
 
     StrataSettings settings();
 
+    /** Where entities' {@code @Inject} fields come from. */
+    Services services();
+
     /** Metrics, events, the cluster view and the store, for management tools. */
     io.strata.management.Introspection introspection();
 

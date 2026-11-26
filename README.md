@@ -114,6 +114,32 @@ Strata restores them on load. Scala collections work with `jackson-module-scala`
 classpath. The builder API (`EntityType.builder`) remains for anything the annotations don't
 cover. Spring is never required.
 
+## Services: what entities use
+
+Entities get collaborators (payment clients, repositories, AI clients) through `@Inject` fields
+(Strata's annotation, or `jakarta.inject.Inject`). They're never stored, and they're filled in
+whenever the runtime creates, loads or copies an entity. Services are looked up once per type at
+start; a missing one stops startup with a message naming the entity, field and type.
+
+```java
+@Entity
+public class Basket {
+    private long total;                              // state
+    @Inject Pricing pricing;                         // by type
+    @Inject(name = "discounts") Pricing discounts;   // by name
+
+    @Command public long add(String item) { return total += pricing.price(item) - discounts.price(item); }
+}
+```
+
+Whoever hosts Strata provides them, and entity code doesn't change:
+
+- **Plain app:** `Strata.start(Services.builder().add(Pricing.class, new HttpPricing()).build())`
+- **Spring Boot:** they're Spring beans, by type (honouring `@Primary`) or by bean name.
+
+Spring never manages entities, and entities never become beans: Pekko owns their lifecycle,
+placement and concurrency; Spring (when used) owns the app around them.
+
 ## Management API
 
 Served on the same HTTP server as entity routes (strata-http or Spring), under

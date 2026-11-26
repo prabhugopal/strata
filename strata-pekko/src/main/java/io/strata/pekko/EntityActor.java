@@ -29,21 +29,22 @@ import java.util.concurrent.CompletionException;
  * arrive meanwhile wait in the stash. It passivates after an idle period and reloads on next use.
  */
 final class EntityActor<S> {
-    record Deps(Codec codec, StateStore store, Durability durability, Duration passivateAfter, int stashCapacity, EntityObserver observer) {}
+    record Deps<S>(Codec codec, StateStore store, Durability durability, Duration passivateAfter, int stashCapacity, EntityObserver observer,
+                   EntityType.Bound<S> inject) {}
 
     private final EntityType<S> type;
     private final String id;
-    private final Deps deps;
+    private final Deps<S> deps;
     private final ActorContext<Msg> ctx;
     private final StashBuffer<Msg> stash;
     private final ActorRef<ClusterSharding.ShardCommand> shard;
 
-    private EntityActor(EntityType<S> type, String id, Deps deps, ActorContext<Msg> ctx, StashBuffer<Msg> stash,
+    private EntityActor(EntityType<S> type, String id, Deps<S> deps, ActorContext<Msg> ctx, StashBuffer<Msg> stash,
                         ActorRef<ClusterSharding.ShardCommand> shard) {
         this.type = type; this.id = id; this.deps = deps; this.ctx = ctx; this.stash = stash; this.shard = shard;
     }
 
-    static <S> Behavior<Msg> create(EntityType<S> type, String id, Deps deps, ActorRef<ClusterSharding.ShardCommand> shard) {
+    static <S> Behavior<Msg> create(EntityType<S> type, String id, Deps<S> deps, ActorRef<ClusterSharding.ShardCommand> shard) {
         return Behaviors.withStash(deps.stashCapacity(), stash -> Behaviors.setup(ctx -> {
             ctx.setReceiveTimeout(deps.passivateAfter(), Idle.INSTANCE);
             deps.observer().activated(type.name(), id);
@@ -52,7 +53,7 @@ final class EntityActor<S> {
     }
 
     private Behavior<Msg> start() {
-        if (deps.durability() == Durability.EPHEMERAL) return ready(type.initialState(), 0);
+        if (deps.durability() == Durability.EPHEMERAL) return ready(injected(type.initialState()), 0);
         ctx.pipeToSelf(deps.store().load(type.name(), id), Loaded::new);
         return loading();
     }
@@ -66,13 +67,19 @@ final class EntityActor<S> {
                         failStashed(Kind.UNAVAILABLE, "Couldn't load " + type.name() + "/" + id + ": " + rootMessage(l.error()));
                         return stop();
                     }
-                    S state = l.state().map(s -> deps.codec().decode(s.state(), type.stateType())).orElseGet(type::initialState);
+                    S state = injected(l.state().map(s -> deps.codec().decode(s.state(), type.stateType())).orElseGet(type::initialState));
                     long rev = l.state().map(StoredState::revision).orElse(0L);
                     return stash.unstashAll(ready(state, rev));
                 })
                 .onMessage(Msg.class, m -> { stash.stash(m); return Behaviors.same(); })
                 .onSignal(PostStop.class, sig -> stopped())
                 .build();
+    }
+
+    /** Fill @Inject fields (a few field writes; the services were resolved at registration). */
+    private S injected(S instance) {
+        if (instance != null) deps.inject().into(instance);
+        return instance;
     }
 
     private Behavior<Msg> stop() {
@@ -112,7 +119,7 @@ final class EntityActor<S> {
         try {
             // Mutable state is changed in place, so the handler works on a copy: if it throws,
             // the committed state is untouched.
-            S working = type.mutableState() ? deps.codec().copy(state, type.stateType()) : state;
+            S working = type.mutableState() ? injected(deps.codec().copy(state, type.stateType())) : state;
             reply = def.handler().handle(working, arg);
             if (reply == null) throw new IllegalStateException("command handler returned null; return Reply.update(...) or Reply.read(...)");
         } catch (Exception e) {

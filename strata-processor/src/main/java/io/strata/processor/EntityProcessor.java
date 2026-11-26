@@ -97,8 +97,20 @@ public final class EntityProcessor extends AbstractProcessor {
         String argsRecord() { return Character.toUpperCase(command.charAt(0)) + command.substring(1).replaceAll("[^A-Za-z0-9_]", "_") + "Args"; }
     }
 
+    private record Injected(String field, TypeMirror type, String name) {}
+
     private record Model(TypeElement type, String pkg, String stateType, String entityClass, String clientClass,
-                         String name, Durability durability, String mount, List<Op> ops) {}
+                         String name, Durability durability, String mount, List<Op> ops, List<Injected> injected) {}
+
+    /** The @Inject annotation on a field (Strata's or jakarta.inject's), or null. */
+    private static String injectName(VariableElement f) {
+        io.strata.annotation.Inject strata = f.getAnnotation(io.strata.annotation.Inject.class);
+        if (strata != null) return strata.name();
+        for (var a : f.getAnnotationMirrors()) {
+            if (((TypeElement) a.getAnnotationType().asElement()).getQualifiedName().contentEquals("jakarta.inject.Inject")) return "";
+        }
+        return null;
+    }
 
     private Model model(Element e) throws Invalid {
         if (e.getKind() != ElementKind.CLASS) throw new Invalid(e, "only classes can be entities");
@@ -114,8 +126,17 @@ public final class EntityProcessor extends AbstractProcessor {
                 .anyMatch(c -> c.getParameters().isEmpty() && !c.getModifiers().contains(Modifier.PRIVATE));
         if (!hasNoArgCtor) throw new Invalid(e, "needs a non-private constructor without parameters (it creates the initial state)");
 
+        List<Injected> injected = new ArrayList<>();
         for (VariableElement f : ElementFilter.fieldsIn(processingEnv.getElementUtils().getAllMembers(type))) {
             Set<Modifier> fm = f.getModifiers();
+            String inject = injectName(f);
+            if (inject != null) {
+                if (fm.contains(Modifier.STATIC) || fm.contains(Modifier.FINAL) || fm.contains(Modifier.PRIVATE)) {
+                    throw new Invalid(f, "@Inject field \"" + f.getSimpleName() + "\" must be a non-private, non-final instance field (Strata sets it)");
+                }
+                injected.add(new Injected(f.getSimpleName().toString(), f.asType(), inject));
+                continue;
+            }
             if (fm.contains(Modifier.FINAL) && !fm.contains(Modifier.STATIC) && !fm.contains(Modifier.TRANSIENT)) {
                 throw new Invalid(f, "state field \"" + f.getSimpleName() + "\" can't be final: Strata restores fields when it loads "
                         + "an entity (mark it transient if it isn't state)");
@@ -190,7 +211,7 @@ public final class EntityProcessor extends AbstractProcessor {
         String base = flatName(type);
         return new Model(type, pkg.isUnnamed() ? "" : pkg.getQualifiedName().toString(), type.getQualifiedName().toString(),
                 base + option(ENTITY_SUFFIX_OPTION, DEFAULT_ENTITY_SUFFIX), base + option(CLIENT_SUFFIX_OPTION, DEFAULT_CLIENT_SUFFIX),
-                name, durability, mount, ops);
+                name, durability, mount, ops, injected);
     }
 
     // ---- generated sources --------------------------------------------------------------------
@@ -200,12 +221,27 @@ public final class EntityProcessor extends AbstractProcessor {
         StringBuilder b = header(m.pkg());
         b.append("/** The entity type generated from {@link ").append(s).append("}. */\n")
          .append("@javax.annotation.processing.Generated(\"").append(EntityProcessor.class.getName()).append("\")\n")
+         .append("@SuppressWarnings(\"unchecked\")\n")
          .append("public final class ").append(m.entityClass()).append(" implements io.strata.spi.EntityTypeProvider {\n")
          .append("    public static final io.strata.EntityType<").append(s).append("> TYPE = io.strata.EntityType.builder(")
          .append(literal(m.name())).append(", ").append(s).append(".class)\n")
          .append("            .initial(").append(s).append("::new)\n")
          .append("            .mutableState()\n");
         if (m.durability() != null) b.append("            .durability(io.strata.Durability.").append(m.durability().name()).append(")\n");
+        if (!m.injected().isEmpty()) {
+            // Services are resolved once, at registration; each instance just gets field writes.
+            b.append("            .inject(services -> {\n");
+            for (int i = 0; i < m.injected().size(); i++) {
+                Injected in = m.injected().get(i);
+                b.append("                ").append(in.type()).append(" v").append(i).append(" = ")
+                 .append(isGeneric(in.type()) ? "(" + in.type() + ") " : "")
+                 .append("io.strata.EntityType.require(services, ").append(erasure(in.type())).append(".class, ")
+                 .append(literal(in.name())).append(", ").append(literal(m.name())).append(", ").append(literal(in.field())).append(");\n");
+            }
+            b.append("                return s -> {");
+            for (int i = 0; i < m.injected().size(); i++) b.append(" s.").append(m.injected().get(i).field()).append(" = v").append(i).append(";");
+            b.append(" };\n            })\n");
+        }
         if (m.mount() != null) b.append("            .mount(").append(literal(m.mount())).append(")\n");
         for (Op op : m.ops()) {
             String call = "s." + op.method().getSimpleName() + "(" + callArgs(op) + ")";

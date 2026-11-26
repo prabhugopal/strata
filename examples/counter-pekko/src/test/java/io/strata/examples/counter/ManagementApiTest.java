@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /** The management API over HTTP, as the strata CLI and Stratum use it. */
 class ManagementApiTest {
     @TempDir Path dir;
-    final HttpClient http = HttpClient.newHttpClient();
+    HttpClient http = HttpClient.newHttpClient();
     final ObjectMapper json = new ObjectMapper();
 
     StrataRuntime start(Map<String, Object> extra) {
@@ -31,6 +31,9 @@ class ManagementApiTest {
                 "strata.pekko.system.pekko.remote.artery.canonical.port", 0,
                 "strata.store.jdbc.url", "jdbc:h2:file:" + dir.resolve("db")));
         cfg.putAll(extra);
+        // A fresh client per node: a new node can get the previous one's port, and a pooled
+        // connection to the closed server would fail.
+        http = HttpClient.newHttpClient();
         return Strata.start(ConfigFactory.parseMap(cfg).withFallback(ConfigFactory.load()).resolve());
     }
 

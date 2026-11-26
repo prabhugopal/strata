@@ -18,9 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class CounterPekkoTest {
     @TempDir Path dir;
-    final HttpClient http = HttpClient.newHttpClient();
+    HttpClient http = HttpClient.newHttpClient();
 
     StrataRuntime start() {
+        http = HttpClient.newHttpClient(); // a new node may reuse the old one's port
         return Strata.start(ConfigFactory.parseMap(Map.of(
                 "strata.http.port", 0,
                 "strata.pekko.system.pekko.remote.artery.canonical.port", 0,

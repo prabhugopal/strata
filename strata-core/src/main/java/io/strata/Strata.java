@@ -20,8 +20,17 @@ public final class Strata {
     }
 
     public static StrataRuntime start(Config config) {
+        return start(config, Services.NONE);
+    }
+
+    /** Start with services for entities' {@code @Inject} fields. */
+    public static StrataRuntime start(Services services) {
+        return start(ConfigFactory.load(), services);
+    }
+
+    public static StrataRuntime start(Config config, Services services) {
         StrataSettings settings = StrataSettings.from(config);
-        StrataRuntime runtime = startRuntime(settings);
+        StrataRuntime runtime = startRuntime(settings, services);
         try {
             if (settings.discoverEntities()) {
                 ServiceLoader.load(EntityTypeProvider.class).forEach(p -> runtime.register(p.entityType()));
@@ -42,7 +51,7 @@ public final class Strata {
         return runtime;
     }
 
-    private static StrataRuntime startRuntime(StrataSettings settings) {
+    private static StrataRuntime startRuntime(StrataSettings settings, Services services) {
         ServiceLoader<RuntimeProvider> providers = ServiceLoader.load(RuntimeProvider.class);
         return providers.stream()
                 .map(ServiceLoader.Provider::get)
@@ -50,6 +59,6 @@ public final class Strata {
                 .findFirst()
                 .orElseThrow(() -> new StrataException("No Strata runtime \"" + settings.backend() + "\" on the classpath (found: "
                         + providers.stream().map(p -> p.get().backend()).collect(Collectors.joining(", ")) + "). Add strata-pekko."))
-                .start(settings);
+                .start(settings, services);
     }
 }

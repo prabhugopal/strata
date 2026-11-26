@@ -18,6 +18,7 @@ include(
     "strata-bench",
     "examples:counter-spring",
     "examples:counter-pekko",
+    "examples:services",
     "examples:interop-kotlin",
     "examples:interop-scala",
     "examples:interop-clojure",

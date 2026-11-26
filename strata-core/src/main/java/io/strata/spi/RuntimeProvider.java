@@ -1,5 +1,6 @@
 package io.strata.spi;
 
+import io.strata.Services;
 import io.strata.StrataRuntime;
 import io.strata.StrataSettings;
 
@@ -7,5 +8,5 @@ import io.strata.StrataSettings;
 public interface RuntimeProvider {
     String backend();
 
-    StrataRuntime start(StrataSettings settings);
+    StrataRuntime start(StrataSettings settings, Services services);
 }

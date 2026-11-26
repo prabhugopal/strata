@@ -49,6 +49,9 @@ class CounterApplicationTest {
             assertEquals(400, request(ctx, "POST", "/counters/alice/add", null).statusCode());
             assertEquals(404, request(ctx, "POST", "/counters/alice/nope", null).statusCode());
             assertEquals("11", send(ctx, "GET", "/counters/alice", null));
+            // An entity using a Spring bean (@Inject Greeter).
+            assertEquals("\"Hello Ada, visit #1\"", send(ctx, "POST", "/visitors/v1/visit", "\"Ada\""));
+            assertEquals("\"Hello Ada, visit #2\"", send(ctx, "POST", "/visitors/v1/visit", "\"Ada\""));
         }
         try (var ctx = start()) {
             assertEquals("11", send(ctx, "GET", "/counters/alice", null), "state committed by the previous process");

@@ -44,9 +44,16 @@ public final class AnnotatedEntityTypes {
         if (ann == null) throw invalid(cls, "isn't annotated @Entity");
         if (Modifier.isAbstract(cls.getModifiers()) || cls.isInterface()) throw invalid(cls, "can't be abstract");
         if (cls.getTypeParameters().length > 0) throw invalid(cls, "can't have type parameters");
+        List<Field> injected = new ArrayList<>();
         for (Class<?> c = cls; c != null && c != Object.class; c = c.getSuperclass()) {
             for (Field f : c.getDeclaredFields()) {
                 int m = f.getModifiers();
+                if (injectName(f) != null) {
+                    if (Modifier.isStatic(m) || Modifier.isFinal(m)) throw invalid(cls, "@Inject field \"" + f.getName() + "\" must be a non-final instance field");
+                    f.setAccessible(true);
+                    injected.add(f);
+                    continue;
+                }
                 if (Modifier.isFinal(m) && !Modifier.isStatic(m) && !Modifier.isTransient(m) && !f.isSynthetic()) {
                     throw invalid(cls, "state field \"" + f.getName() + "\" can't be final: Strata restores fields when it loads an entity"
                             + " (Kotlin/Scala: use var; mark it transient if it isn't state)");
@@ -66,6 +73,23 @@ public final class AnnotatedEntityTypes {
         EntityType.Builder<S> b = EntityType.builder(name, cls).initial(() -> newInstance(ctor)).mutableState();
         if (!ann.durability().isEmpty()) b.durability(Durability.parse(ann.durability()));
         if (!ann.mount().isEmpty()) b.mount(ann.mount());
+        if (!injected.isEmpty()) {
+            String typeName = name;
+            b.inject(services -> {
+                Object[] values = new Object[injected.size()];
+                for (int i = 0; i < values.length; i++) {
+                    Field f = injected.get(i);
+                    values[i] = EntityType.require(services, f.getType(), injectName(f), typeName, f.getName());
+                }
+                return instance -> {
+                    try {
+                        for (int i = 0; i < values.length; i++) injected.get(i).set(instance, values[i]);
+                    } catch (IllegalAccessException e) {
+                        throw new StrataException("Couldn't set @Inject fields of " + typeName, e);
+                    }
+                };
+            });
+        }
 
         Set<String> commands = new HashSet<>();
         Set<String> routes = new HashSet<>();
@@ -112,6 +136,14 @@ public final class AnnotatedEntityTypes {
         }
         if (commands.isEmpty()) throw invalid(cls, "has no @Command or @Query methods");
         return b.build();
+    }
+
+    /** The @Inject name on a field (Strata's annotation or jakarta.inject's), or null when not injected. */
+    private static String injectName(Field f) {
+        io.strata.annotation.Inject strata = f.getAnnotation(io.strata.annotation.Inject.class);
+        if (strata != null) return strata.name();
+        for (var a : f.getAnnotations()) if (a.annotationType().getName().equals("jakarta.inject.Inject")) return "";
+        return null;
     }
 
     private static Object[] arguments(String command, Parameter[] params, Type[] types, Object arg, Codec codec) {

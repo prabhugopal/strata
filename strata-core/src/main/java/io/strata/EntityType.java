@@ -45,6 +45,21 @@ public final class EntityType<S> {
     /** An HTTP route to a command, relative to the type's {@link #mount()}. */
     public record Route(String method, String path, String command) {}
 
+    /**
+     * Fills an entity's {@code @Inject} fields. {@link #bind} looks the services up once (at
+     * registration); the result is applied to every instance the runtime creates, loads or copies.
+     */
+    @FunctionalInterface
+    public interface Injector<S> {
+        Bound<S> bind(Services services);
+    }
+
+    /** An injector with its services resolved. */
+    @FunctionalInterface
+    public interface Bound<S> {
+        void into(S instance);
+    }
+
     /** One {@code {variable}} in a path. */
     private static final Pattern PATH_VARIABLE = Pattern.compile("\\{([A-Za-z_][A-Za-z0-9_]*)}");
 
@@ -57,6 +72,7 @@ public final class EntityType<S> {
     private final String idVariable;
     private final Map<String, CommandDef<S>> commands;
     private final List<Route> routes;
+    private final Injector<S> injector;
 
     private EntityType(Builder<S> b) {
         this.name = b.name;
@@ -72,6 +88,7 @@ public final class EntityType<S> {
             throw new IllegalArgumentException("Entity type " + name + " has routes but no mount");
         }
         this.routes = List.copyOf(b.routes);
+        this.injector = b.injector;
     }
 
     /** The single id variable of a mount path, e.g. {@code /carts/{cartId}} → {@code cartId}. */
@@ -108,6 +125,23 @@ public final class EntityType<S> {
 
     public List<Route> routes() { return routes; }
 
+    /** Whether instances have {@code @Inject} fields to fill. */
+    public boolean injects() { return injector != null; }
+
+    /**
+     * Resolve this type's services (once, at registration). Fails with a clear message when a
+     * service is missing, so a misconfigured app fails at start, not on some later command.
+     */
+    public Bound<S> bind(Services services) {
+        return injector == null ? s -> { } : injector.bind(services);
+    }
+
+    /** For injectors: the service or a startup failure naming what's missing. */
+    public static <T> T require(Services services, Class<T> type, String name, String entityType, String field) {
+        return services.find(type, name).orElseThrow(() -> new StrataException(StrataException.Kind.INTERNAL,
+                "Entity type " + entityType + " needs a " + type.getName() + (name == null || name.isEmpty() ? "" : " named \"" + name + "\"")
+                        + " for its field " + field + ", but no service provides one (register it with Services, or as a Spring bean)"));
+    }
     /** This type's durability, or the configured default when the type doesn't set one. */
     public Durability durability(StrataSettings settings) {
         return durability != null ? durability : settings.defaultDurability();
@@ -131,6 +165,7 @@ public final class EntityType<S> {
         private String mount;
         private final Map<String, CommandDef<S>> commands = new LinkedHashMap<>();
         private final List<Route> routes = new ArrayList<>();
+        private Injector<S> injector;
 
         private Builder(String name, Class<S> stateType) {
             if (!EntityTypeNames.valid(name)) {
@@ -144,6 +179,9 @@ public final class EntityType<S> {
         public Builder<S> initial(Supplier<S> initial) { this.initial = initial; return this; }
 
         public Builder<S> durability(Durability durability) { this.durability = durability; return this; }
+
+        /** Fill {@code @Inject} fields of every instance; see {@link Injector}. */
+        public Builder<S> inject(Injector<S> injector) { this.injector = injector; return this; }
 
         /** Handlers mutate the state object in place; see {@link EntityType#mutableState()}. */
         public Builder<S> mutableState() { this.mutableState = true; return this; }

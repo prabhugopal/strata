@@ -22,7 +22,20 @@ public final class Codec {
         this.mapper = new ObjectMapper()
                 .findAndRegisterModules()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, settings.failOnUnknownProperties())
-                .setVisibility(PropertyAccessor.FIELD, visibility(settings.fieldVisibility()));
+                .setVisibility(PropertyAccessor.FIELD, visibility(settings.fieldVisibility()))
+                .setAnnotationIntrospector(new InjectedFieldsIgnored());
+    }
+
+    /** @Inject fields are collaborators, not state: never stored or sent. */
+    private static final class InjectedFieldsIgnored extends com.fasterxml.jackson.databind.introspect.JacksonAnnotationIntrospector {
+        @Override
+        public boolean hasIgnoreMarker(com.fasterxml.jackson.databind.introspect.AnnotatedMember m) {
+            if (m.hasAnnotation(io.strata.annotation.Inject.class)) return true;
+            for (var a : m.getAnnotated() instanceof java.lang.reflect.AnnotatedElement e ? e.getAnnotations() : new java.lang.annotation.Annotation[0]) {
+                if (a.annotationType().getName().equals("jakarta.inject.Inject")) return true;
+            }
+            return super.hasIgnoreMarker(m);
+        }
     }
 
     private static JsonAutoDetect.Visibility visibility(String value) {

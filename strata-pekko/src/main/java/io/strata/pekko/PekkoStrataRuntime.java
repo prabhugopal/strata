@@ -3,6 +3,7 @@ package io.strata.pekko;
 import io.strata.Codec;
 import io.strata.EntityRef;
 import io.strata.EntityType;
+import io.strata.Services;
 import io.strata.StrataException;
 import io.strata.StrataRuntime;
 import io.strata.StrataSettings;
@@ -39,6 +40,7 @@ import java.util.function.Function;
 /** Strata on Apache Pekko: one actor system per node, one sharded entity type per registration. */
 public final class PekkoStrataRuntime implements StrataRuntime {
     private final StrataSettings settings;
+    private final Services services;
     private final PekkoSettings pekko;
     private final Codec codec;
     private final ExecutorService io;
@@ -53,8 +55,9 @@ public final class PekkoStrataRuntime implements StrataRuntime {
 
     private record Registered<S>(EntityType<S> type, EntityTypeKey<Msg> key) {}
 
-    public PekkoStrataRuntime(StrataSettings settings) {
+    public PekkoStrataRuntime(StrataSettings settings, Services services) {
         this.settings = settings;
+        this.services = services;
         this.pekko = PekkoSettings.from(settings.config());
         this.codec = new Codec(settings);
         this.io = settings.newStoreExecutor();
@@ -86,13 +89,20 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     public <S> void register(EntityType<S> type) {
         EntityTypeKey<Msg> key = EntityTypeKey.create(Msg.class, type.name());
         synchronized (types) {
+            Registered<?> already = types.get(type.name());
+            if (already != null && already.type() == type) return;
+        }
+        EntityType.Bound<S> check = type.bind(services); // fail before registering if a service is missing
+        synchronized (types) {
             Registered<?> existing = types.putIfAbsent(type.name(), new Registered<>(type, key));
             if (existing != null) {
                 if (existing.type() == type) return; // e.g. discovered and also declared as a Spring bean
                 throw new StrataException("A different entity type named \"" + type.name() + "\" is already registered");
             }
         }
-        var deps = new EntityActor.Deps(codec, store, type.durability(settings), settings.passivateAfter(), pekko.stashCapacity(), observability);
+        // Services were looked up once above; a missing one failed registration (and so startup).
+        EntityType.Bound<S> bound = check;
+        var deps = new EntityActor.Deps<>(codec, store, type.durability(settings), settings.passivateAfter(), pekko.stashCapacity(), observability, bound);
         sharding.init(Entity.of(key, ctx -> EntityActor.create(type, ctx.getEntityId(), deps, ctx.getShard()))
                 .withStopMessage(Stop.INSTANCE));
     }
@@ -118,6 +128,9 @@ public final class PekkoStrataRuntime implements StrataRuntime {
 
     @Override
     public StrataSettings settings() { return settings; }
+
+    @Override
+    public Services services() { return services; }
 
     @Override
     public Introspection introspection() { return introspection; }
@@ -241,6 +254,6 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     /** Registered with ServiceLoader; selected by strata.runtime.backend = "pekko". */
     public static final class Provider implements RuntimeProvider {
         @Override public String backend() { return "pekko"; }
-        @Override public StrataRuntime start(StrataSettings settings) { return new PekkoStrataRuntime(settings); }
+        @Override public StrataRuntime start(StrataSettings settings, Services services) { return new PekkoStrataRuntime(settings, services); }
     }
 }

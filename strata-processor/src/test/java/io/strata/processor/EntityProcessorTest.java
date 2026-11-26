@@ -66,6 +66,25 @@ class EntityProcessorTest {
     }
 
     @Test
+    void injectedFieldsAreFilledFromServicesNotStored() throws Exception {
+        var r = compile("p.Q", """
+                package p;
+                import io.strata.annotation.*;
+                @Entity public class Q {
+                    long n;
+                    @Inject java.util.function.Supplier<String> greeting;
+                    @Inject(name = "clock") java.time.Clock clock;
+                    @Command public String hi() { return greeting.get(); }
+                }
+                """);
+        assertTrue(r.ok(), r.errors());
+        String entity = Files.readString(r.out().resolve("p/QEntity.java"));
+        assertTrue(entity.contains("(java.util.function.Supplier<java.lang.String>) io.strata.EntityType.require(services, java.util.function.Supplier.class, \"\", \"q\", \"greeting\")"), entity);
+        assertTrue(entity.contains("io.strata.EntityType.require(services, java.time.Clock.class, \"clock\", \"q\", \"clock\")"), entity);
+        assertTrue(entity.contains("s.greeting = v0; s.clock = v1;"), entity);
+    }
+
+    @Test
     void generatedNamesAreConfigurable() throws Exception {
         var r = compile("p.Counter", "package p; import io.strata.annotation.*; @Entity public class Counter { int n; @Command public int inc() { return ++n; } }",
                 "-Astrata.entitySuffix=Type", "-Astrata.clientSuffix=Ref");
@@ -102,6 +121,7 @@ class EntityProcessorTest {
         assertRejected("@Entity public class E { @Command @Query public int a() { return 1; } }", "not both");
         assertRejected("@Entity public class E { @Command private void a() {} }", "non-private instance methods");
         assertRejected("@Entity public class E { @Command public void snapshot() {} }", "used by the generated client");
+        assertRejected("@Entity public class E { @Inject private Runnable r; @Command public void a() {} }", "must be a non-private, non-final instance field");
         assertRejected("@Entity public class E { final java.util.List<String> xs = new java.util.ArrayList<>(); @Command public void a() {} }", "can't be final");
     }
 }
