@@ -18,6 +18,7 @@ record PekkoSettings(String clusterMode, Duration startupTimeout, Duration start
         }
         system = tls(c.getConfig("tls")).withFallback(system);
         system = splitBrain(c.getConfig("split-brain")).withFallback(system);
+        system = passivation(c.getConfig("passivation")).withFallback(system);
         String mode = c.getString("cluster-mode");
         if (!mode.equals("single") && !mode.equals("seed-nodes")) {
             throw new IllegalArgumentException("strata.pekko.cluster-mode must be \"single\" or \"seed-nodes\", not \"" + mode + "\"");
@@ -86,6 +87,20 @@ record PekkoSettings(String clusterMode, Duration startupTimeout, Duration start
     static final String LEASE_CONFIG_PATH = "strata-store-lease";
 
     /** strata.pekko.split-brain as Pekko's split-brain resolver settings. */
+    /** strata.pekko.passivation → Pekko's idle-entity passivation. */
+    static Config passivation(Config p) {
+        String key = "pekko.cluster.sharding.passivation.default-idle-strategy.idle-entity.timeout";
+        String v = p.getString("idle-timeout").trim();
+        if (v.equalsIgnoreCase("off")) return com.typesafe.config.ConfigFactory.parseMap(java.util.Map.of(key, "off"));
+        java.time.Duration d;
+        try { d = p.getDuration("idle-timeout"); }
+        catch (com.typesafe.config.ConfigException e) {
+            throw new IllegalArgumentException("strata.pekko.passivation.idle-timeout: a duration like 2m or 30s, or off (got \"" + v + "\")");
+        }
+        if (d.isNegative() || d.isZero()) throw new IllegalArgumentException("strata.pekko.passivation.idle-timeout must be positive, or off");
+        return com.typesafe.config.ConfigFactory.parseMap(java.util.Map.of(key, d.toMillis() + "ms"));
+    }
+
     static Config splitBrain(Config sb) {
         String strategy = sb.getString("strategy").trim();
         if (!java.util.Set.of("keep-majority", "lease-majority", "keep-oldest", "static-quorum").contains(strategy)) {
