@@ -57,7 +57,7 @@ public final class EntityProcessor extends AbstractProcessor {
     static final String DEFAULT_CLIENT_SUFFIX = "Client";
     private static final String PROVIDERS = "META-INF/services/io.strata.spi.EntityTypeProvider";
     /** Names the generated client uses for itself; entity methods can't take them. */
-    private static final Set<String> CLIENT_RESERVED = Set.of("of", "entityId", "snapshot");
+    private static final Set<String> CLIENT_RESERVED = Set.of("of", "entityId", "snapshot", "withIdempotencyKey");
 
     private final Set<String> providers = new TreeSet<>();
 
@@ -333,6 +333,8 @@ public final class EntityProcessor extends AbstractProcessor {
          .append("        return new ").append(m.clientClass()).append("(strata.ref(").append(m.entityClass()).append(".TYPE, id));\n")
          .append("    }\n\n")
          .append("    public String entityId() { return ref.id(); }\n\n")
+         .append("    /** The same entity; a repeated call with the same key gets the first call's outcome instead of running again. */\n")
+         .append("    public ").append(m.clientClass()).append(" withIdempotencyKey(String key) { return new ").append(m.clientClass()).append("(ref.withIdempotencyKey(key)); }\n\n")
          .append("    /** The entity's whole current state. */\n")
          .append("    public java.util.concurrent.CompletionStage<").append(s).append("> snapshot() { return ref.state(); }\n");
         for (Op op : m.ops()) {

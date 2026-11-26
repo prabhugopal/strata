@@ -158,6 +158,36 @@ Entity type order isn't sealed: its code reaches outside Strata, so its effects 
 `strata.seal.allow += "com.acme.money.**"`. The check runs once per type at start; nothing at run
 time. Types made with the builder API (plain lambdas, Clojure's `defentity`) aren't checked.
 
+## Durable invocations
+
+A sealed entity's service calls are its only effects, so Strata records them. A command of an
+entity that uses services runs on its own virtual thread; Strata records that it started, and
+stores each service call's outcome (result or exception) before the code continues. State, the
+end of the record and the request's outcome commit in one transaction.
+
+If the node stops mid-command, the next node to load the entity finishes the command first:
+recorded calls return their recorded outcome (a charge isn't made twice, a recorded exception is
+thrown again so the same branch runs), later calls run for real. Nothing to mark in the code:
+
+```java
+@Command public String checkout(long cents) throws PaymentDeclined {
+    String receipt = payments.charge("order", cents);   // recorded
+    mailer.send("Thanks! Receipt " + receipt);         // recorded
+    status = "paid";
+    return receipt;
+}
+```
+
+**Idempotency keys** answer repeated requests (retries after a timeout, redelivered messages)
+with the first one's outcome, success or failure, without running again:
+`OrderClient.of(strata, "o1").withIdempotencyKey("checkout-1").checkout(500)`, the
+`Idempotency-Key` HTTP header (`strata.http.idempotency-header`), or the same header on the
+management API. Outcomes are kept for `strata.durability.result-retention` (24h).
+
+Limits: an effect that happened but whose outcome wasn't stored yet (the node died in between)
+runs again on resume, as with any journal; only interface services are recorded (an injected
+class is used as is, with a warning); entities without services keep the fast inline path.
+
 ## Management API
 
 Served on the same HTTP server as entity routes (strata-http or Spring), under
@@ -345,6 +375,9 @@ Kubernetes pod spec).
 - The plugin's image runs (non-root, JVM flags applied) and its manifests list every pod as a seed.
 - A fresh app that only applies the Gradle plugin compiles its `@Entity`, runs, and gets the JVM
   flags in `run` and in its start script.
+- A node stopped between two service calls: the next node resumes the command, the first effect
+  isn't repeated, a recorded exception replays, and the journal is empty afterwards. Idempotency
+  keys return the first outcome (success or failure) without running again, over HTTP too.
 - Annotation mistakes fail compilation with a message on the offending element.
 - Bad configuration fails at startup.
 - The same API works from Java, Kotlin, Scala 3 and Clojure.

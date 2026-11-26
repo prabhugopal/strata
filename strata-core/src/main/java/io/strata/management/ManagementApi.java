@@ -66,6 +66,11 @@ public final class ManagementApi {
     }
 
     public CompletionStage<Response> handle(String method, String path, Map<String, String> query, byte[] body, String authorization) {
+        return handle(method, path, query, body, authorization, null);
+    }
+
+    /** As above, with the request's idempotency key (header strata.http.idempotency-header), if any. */
+    public CompletionStage<Response> handle(String method, String path, Map<String, String> query, byte[] body, String authorization, String idempotencyKey) {
         try {
             List<String> seg = segments(path.substring(settings.basePath().length()));
             boolean get = method.equalsIgnoreCase("GET");
@@ -88,7 +93,7 @@ public final class ManagementApi {
                 EntityType<?> type = type(seg.get(1));
                 if (get && seg.size() == 3) return entities(type, query);
                 if (get && seg.size() == 4) return entity(type, seg.get(3));
-                if (method.equalsIgnoreCase("POST") && seg.size() == 5) return invoke(type, seg.get(3), seg.get(4), body);
+                if (method.equalsIgnoreCase("POST") && seg.size() == 5) return invoke(type, seg.get(3), seg.get(4), body, idempotencyKey);
             }
             return done(error(404, "no management endpoint " + method + " " + path));
         } catch (StrataException e) {
@@ -227,11 +232,12 @@ public final class ManagementApi {
         }).exceptionally(err -> error(RouteTable.status(err), RouteTable.message(err)));
     }
 
-    private CompletionStage<Response> invoke(EntityType<?> type, String id, String command, byte[] body) {
+    private CompletionStage<Response> invoke(EntityType<?> type, String id, String command, byte[] body, String key) {
         if (!settings.allowInvoke()) return done(error(403, "running commands is turned off (strata.management.allow-invoke)"));
         type.command(command); // 404 for an unknown command, before activating the entity
         long start = System.nanoTime();
-        return runtime.ref(type, id).callJson(command, body == null || body.length == 0 ? null : body)
+        var ref = runtime.ref(type, id);
+        return (key == null || key.isBlank() ? ref : ref.withIdempotencyKey(key)).callJson(command, body == null || body.length == 0 ? null : body)
                 .thenApply(result -> {
                     ObjectNode o = json.createObjectNode();
                     o.set("result", tree(result));

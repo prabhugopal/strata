@@ -2,7 +2,9 @@ package io.strata.pekko;
 
 import io.strata.Codec;
 import io.strata.EntityRef;
+import io.strata.Durability;
 import io.strata.EntityType;
+import io.strata.durability.Recording;
 import io.strata.Services;
 import io.strata.StrataException;
 import io.strata.StrataRuntime;
@@ -45,6 +47,8 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     private final PekkoSettings pekko;
     private final Codec codec;
     private final ExecutorService io;
+    /** Runs commands of entities that use services (they may block): one virtual thread each. */
+    private final ExecutorService commands = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
     private final StateStore store;
     private final ActorSystem<Void> system;
     private final ClusterSharding sharding;
@@ -95,7 +99,22 @@ public final class PekkoStrataRuntime implements StrataRuntime {
             if (already != null && already.type() == type) return;
         }
         seal.apply(type);                                 // refuse unsealed entity code (strata.seal)
-        EntityType.Bound<S> check = type.bind(services); // fail before registering if a service is missing
+        // Services are looked up once; interface services of persistent entities are wrapped so
+        // every call is recorded (a class can't be wrapped: its calls aren't recorded, and we say so).
+        boolean recorded = type.durability(settings) == Durability.PERSISTENT;
+        Services forType = new Services() {
+            @Override
+            public <T> java.util.Optional<T> find(Class<T> cls, String name) {
+                return services.find(cls, name).map(svc -> {
+                    if (!recorded) return svc;
+                    if (cls.isInterface()) return Recording.wrap(cls, svc);
+                    system.log().warn("{}: injected {} is a class, so its calls aren't recorded and may repeat after a crash; inject an interface",
+                            type.name(), cls.getName());
+                    return svc;
+                });
+            }
+        };
+        EntityType.Bound<S> check = type.bind(forType); // fail before registering if a service is missing
         synchronized (types) {
             Registered<?> existing = types.putIfAbsent(type.name(), new Registered<>(type, key));
             if (existing != null) {
@@ -105,7 +124,8 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         }
         // Services were looked up once above; a missing one failed registration (and so startup).
         EntityType.Bound<S> bound = check;
-        var deps = new EntityActor.Deps<>(codec, store, type.durability(settings), settings.passivateAfter(), pekko.stashCapacity(), observability, bound);
+        var deps = new EntityActor.Deps<>(codec, store, type.durability(settings), settings.passivateAfter(), pekko.stashCapacity(), observability, bound,
+                commands, settings.config().getDuration("strata.durability.result-retention"));
         sharding.init(Entity.of(key, ctx -> EntityActor.create(type, ctx.getEntityId(), deps, ctx.getShard()))
                 .withStopMessage(Stop.INSTANCE));
     }
@@ -190,6 +210,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         } catch (Exception e) {
             // Terminating anyway; the store and executor are closed below.
         } finally {
+            commands.shutdownNow();
             store.close();
             io.close();
         }
@@ -199,9 +220,23 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         private final EntityType<S> type;
         private final String id;
         private final org.apache.pekko.cluster.sharding.typed.javadsl.EntityRef<Msg> target;
+        private final String key;
 
         Ref(EntityType<S> type, String id, org.apache.pekko.cluster.sharding.typed.javadsl.EntityRef<Msg> target) {
-            this.type = type; this.id = id; this.target = target;
+            this(type, id, target, null);
+        }
+
+        private Ref(EntityType<S> type, String id, org.apache.pekko.cluster.sharding.typed.javadsl.EntityRef<Msg> target, String key) {
+            this.type = type; this.id = id; this.target = target; this.key = key;
+        }
+
+        @Override
+        public EntityRef<S> withIdempotencyKey(String key) {
+            int max = settings.config().getInt("strata.durability.max-key-length");
+            if (key == null || key.isBlank() || key.length() > max) {
+                throw new StrataException(Kind.INVALID_ARGUMENT, "An idempotency key must be 1-" + max + " characters (strata.durability.max-key-length)");
+            }
+            return new Ref<>(type, id, target, key);
         }
 
         @Override public String id() { return id; }
@@ -214,18 +249,18 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         @Override
         public <R> CompletionStage<R> call(String command, Object arg, Class<R> resultType) {
             byte[] encoded = arg == null ? null : codec.encode(arg);
-            return ask(replyTo -> new Invoke(command, encoded, replyTo), resultType);
+            return ask(replyTo -> new Invoke(command, encoded, key, replyTo), resultType);
         }
 
         @Override
         public <R> CompletionStage<R> call(String command, Object arg, TypeRef<R> resultType) {
             byte[] encoded = arg == null ? null : codec.encode(arg);
-            return ask(replyTo -> new Invoke(command, encoded, replyTo), resultType.type());
+            return ask(replyTo -> new Invoke(command, encoded, key, replyTo), resultType.type());
         }
 
         @Override
         public CompletionStage<byte[]> callJson(String command, byte[] jsonArg) {
-            return askRaw(replyTo -> new Invoke(command, jsonArg, replyTo));
+            return askRaw(replyTo -> new Invoke(command, jsonArg, key, replyTo));
         }
 
         @Override

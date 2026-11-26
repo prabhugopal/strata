@@ -15,3 +15,19 @@ for capacity planning.
 Run-to-run variation on this laptop is about ±10%; the services change is within it (no regression).
 
 Machine: Intel i7-8850H (6 cores), 32 GB, JDK 27, 64 callers, 1,000 entities, 15 s after 5 s warm-up.
+
+## Durable invocations (actor rewrite), A/B
+
+Throughput on this laptop swung from 64k to 165k commands/s for the *same* build while other
+work ran (Stratum, minikube), so the comparison uses CPU time per command (also printed by the
+benchmark), alternating the build before the change (4c7fecf) and after, 3 runs each, 10 s:
+
+| Store | before (µs CPU/command) | after |
+|---|---|---|
+| memory | 94.5, 101.4, 119.1 (avg 105) | 119.7, 105.5, 107.8 (avg 111) |
+| jdbc | 399.3, 405.0, 367.2 (avg 390) | 388.5, 427.2, 442.1 (avg 419) |
+
+Within the run-to-run spread: no clear regression for commands that don't use services (the
+benchmark's). Commands of entities with services pay an extra write per invocation and per
+service call by design. A first version locked the whole in-memory store on every commit
+(about 20% slower); plain commands take the lock-free path again.

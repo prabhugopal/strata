@@ -2,8 +2,6 @@ package io.strata.pekko;
 
 import org.apache.pekko.actor.typed.ActorRef;
 
-import java.util.Optional;
-
 /** Messages to entity actors. Arguments and results travel as JSON bytes, so any JVM language works. */
 final class Protocol {
     private Protocol() {}
@@ -14,7 +12,8 @@ final class Protocol {
     /** Messages that may cross nodes; serialized with Jackson CBOR (see reference.conf). */
     interface Remote {}
 
-    record Invoke(String command, byte[] arg, ActorRef<Result> replyTo) implements Msg, Remote {}
+    /** Run a command. {@code key} (nullable) is an idempotency key; {@code replyTo} is null when resuming. */
+    record Invoke(String command, byte[] arg, String key, ActorRef<Result> replyTo) implements Msg, Remote {}
 
     record GetState(ActorRef<Result> replyTo) implements Msg, Remote {}
 
@@ -27,8 +26,8 @@ final class Protocol {
     /** Sent by sharding to stop an entity during passivation or hand-over. */
     enum Stop implements Msg, Remote { INSTANCE }
 
-    // Local only: an entity talking to itself about asynchronous store I/O.
-    record Loaded(Optional<io.strata.spi.StoredState> state, Throwable error) implements Msg {}
-    record Saved(long revision, Throwable error) implements Msg {}
+    // Local only.
+    /** Asynchronous work the entity started (store I/O, a command running off-thread) finished. */
+    record Step(Object value, Throwable error) implements Msg {}
     enum Idle implements Msg { INSTANCE }
 }

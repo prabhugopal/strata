@@ -37,18 +37,19 @@ public class StrataWebFluxRoutes {
         if (!http.getBoolean("enabled")) return request -> Mono.empty();
         String basePath = http.getString("base-path");
         int maxBodyBytes = Math.toIntExact(http.getBytes("max-body-bytes"));
+        String keyHeader = http.getString("idempotency-header");
         LiveRoutes routes = new LiveRoutes(runtime, basePath);
         ManagementApi management = new ManagementApi(runtime);
         return request -> {
             if (management.handles(request.path())) {
-                return Mono.just(req -> manage(management, req, maxBodyBytes));
+                return Mono.just(req -> manage(management, req, maxBodyBytes, keyHeader));
             }
             Optional<RouteTable.Match> match = routes.current().match(request.method().name(), request.path());
-            return Mono.justOrEmpty(match.<HandlerFunction<ServerResponse>>map(m -> req -> handle(runtime, m, req, maxBodyBytes)));
+            return Mono.justOrEmpty(match.<HandlerFunction<ServerResponse>>map(m -> req -> handle(runtime, m, req, maxBodyBytes, keyHeader)));
         };
     }
 
-    private static Mono<ServerResponse> manage(ManagementApi management, ServerRequest req, int maxBodyBytes) {
+    private static Mono<ServerResponse> manage(ManagementApi management, ServerRequest req, int maxBodyBytes, String keyHeader) {
         return DataBufferUtils.join(req.bodyToFlux(org.springframework.core.io.buffer.DataBuffer.class), maxBodyBytes)
                 .map(buf -> {
                     byte[] bytes = new byte[buf.readableByteCount()];
@@ -58,11 +59,12 @@ public class StrataWebFluxRoutes {
                 })
                 .defaultIfEmpty(new byte[0])
                 .flatMap(body -> Mono.fromCompletionStage(management.handle(req.method().name(), req.path(),
-                        ManagementApi.parseQuery(req.uri().getRawQuery()), body, req.headers().firstHeader("Authorization"))))
+                        ManagementApi.parseQuery(req.uri().getRawQuery()), body, req.headers().firstHeader("Authorization"),
+                        req.headers().firstHeader(keyHeader))))
                 .flatMap(r -> ServerResponse.status(r.status()).contentType(MediaType.parseMediaType(r.contentType())).bodyValue(r.body()));
     }
 
-    private static Mono<ServerResponse> handle(StrataRuntime runtime, RouteTable.Match m, ServerRequest req, int maxBodyBytes) {
+    private static Mono<ServerResponse> handle(StrataRuntime runtime, RouteTable.Match m, ServerRequest req, int maxBodyBytes, String keyHeader) {
         Mono<byte[]> body = m.takesArgument()
                 ? DataBufferUtils.join(req.bodyToFlux(org.springframework.core.io.buffer.DataBuffer.class), maxBodyBytes).map(buf -> {
                     byte[] bytes = new byte[buf.readableByteCount()];
@@ -72,8 +74,12 @@ public class StrataWebFluxRoutes {
                 })
                 : Mono.empty();
         return body.map(Optional::of).defaultIfEmpty(Optional.empty())
-                .flatMap(arg -> Mono.fromCompletionStage(runtime.ref(m.type(), m.id())
-                        .callJson(m.command(), arg.filter(a -> a.length > 0).orElse(null))))
+                .flatMap(arg -> {
+                    var ref = runtime.ref(m.type(), m.id());
+                    String key = req.headers().firstHeader(keyHeader);
+                    return Mono.fromCompletionStage((key != null && !key.isBlank() ? ref.withIdempotencyKey(key) : ref)
+                            .callJson(m.command(), arg.filter(a -> a.length > 0).orElse(null)));
+                })
                 .flatMap(result -> ServerResponse.ok().contentType(MediaType.APPLICATION_JSON).bodyValue(result))
                 .onErrorResume(err -> ServerResponse.status(HttpStatus.valueOf(RouteTable.status(err)))
                         .contentType(MediaType.APPLICATION_JSON).bodyValue(Map.of("error", RouteTable.message(err))));

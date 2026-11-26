@@ -29,6 +29,13 @@ public interface EntityRef<S> {
 
     default CompletionStage<Object> call(String command) { return call(command, Object.class); }
 
+    /**
+     * The same entity, with an idempotency key on every call made through it: a repeated call
+     * with the same key (a retry after a timeout, a redelivered message) gets the first call's
+     * outcome instead of running again. Outcomes are kept for strata.durability.result-retention.
+     */
+    EntityRef<S> withIdempotencyKey(String key);
+
     /** The entity's current state. */
     CompletionStage<S> state();
 }

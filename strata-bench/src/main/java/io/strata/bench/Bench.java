@@ -34,11 +34,16 @@ public final class Bench {
             run(strata, concurrency, entities, warmup, 0);
             long[] lat = new long[maxSamples];
             AtomicInteger n = new AtomicInteger();
+            var os = (com.sun.management.OperatingSystemMXBean) java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+            long cpu0 = os.getProcessCpuTime();
             long ops = run(strata, concurrency, entities, duration, 0, lat, n);
+            long cpu = os.getProcessCpuTime() - cpu0;
             long[] sample = Arrays.copyOf(lat, Math.min(n.get(), lat.length));
             Arrays.sort(sample);
             System.out.printf("store=%s concurrency=%d entities=%d duration=%ss%n", store, concurrency, entities, duration.toSeconds());
             System.out.printf("throughput: %,.0f commands/s%n", ops / (duration.toNanos() / 1e9));
+            // Less sensitive to other load on the machine than throughput: CPU this process spent per command.
+            System.out.printf("cpu µs/command: %.1f%n", cpu / 1000.0 / Math.max(1, ops));
             System.out.printf("latency ms: p50 %.2f  p90 %.2f  p99 %.2f  p99.9 %.2f  max %.2f%n",
                     pct(sample, .50), pct(sample, .90), pct(sample, .99), pct(sample, .999), sample.length == 0 ? 0 : sample[sample.length - 1] / 1e6);
         }

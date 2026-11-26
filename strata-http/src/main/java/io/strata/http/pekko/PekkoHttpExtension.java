@@ -32,12 +32,12 @@ import java.util.concurrent.TimeUnit;
 public final class PekkoHttpExtension implements StrataExtension {
 
     record Settings(boolean enabled, String host, int port, String basePath, long maxBodyBytes,
-                    Duration bindTimeout, Duration shutdownTimeout, Duration bodyTimeout) {
+                    Duration bindTimeout, Duration shutdownTimeout, Duration bodyTimeout, String idempotencyHeader) {
         static Settings from(Config root) {
             Config c = root.getConfig("strata.http");
             return new Settings(c.getBoolean("enabled"), c.getString("host"), c.getInt("port"), c.getString("base-path"),
                     c.getBytes("max-body-bytes"), c.getDuration("bind-timeout"), c.getDuration("shutdown-timeout"),
-                    c.getDuration("body-timeout"));
+                    c.getDuration("body-timeout"), c.getString("idempotency-header"));
         }
     }
 
@@ -93,7 +93,8 @@ public final class PekkoHttpExtension implements StrataExtension {
             String query = request.getUri().rawQueryString().orElse("");
             String auth = request.getHeader("Authorization").map(h -> h.value()).orElse(null);
             return request.entity().toStrict(s.bodyTimeout().toMillis(), s.maxBodyBytes(), mat)
-                    .thenCompose(e -> management.handle(request.method().value(), path, ManagementApi.parseQuery(query), e.getData().toArray(), auth))
+                    .thenCompose(e -> management.handle(request.method().value(), path, ManagementApi.parseQuery(query), e.getData().toArray(), auth,
+                            request.getHeader(s.idempotencyHeader()).map(h -> h.value()).orElse(null)))
                     .thenApply(r -> HttpResponse.create().withStatus(StatusCodes.get(r.status())).withEntity(HttpEntities.create(
                             r.contentType().startsWith("application/json") ? ContentTypes.APPLICATION_JSON : ContentTypes.TEXT_PLAIN_UTF8, r.body())))
                     .exceptionally(err -> error(RouteTable.status(err), RouteTable.message(err)));
@@ -116,7 +117,11 @@ public final class PekkoHttpExtension implements StrataExtension {
                     ? request.entity().toStrict(s.bodyTimeout().toMillis(), s.maxBodyBytes(), mat).thenApply(e -> e.getData().toArray())
                     : request.discardEntityBytes(mat).completionStage().thenApply(done -> null);
             return body
-                    .thenCompose(arg -> runtime.ref(m.type(), m.id()).callJson(m.command(), arg == null || arg.length == 0 ? null : arg))
+                    .thenCompose(arg -> {
+                        var ref = runtime.ref(m.type(), m.id());
+                        var key = request.getHeader(s.idempotencyHeader()).map(h -> h.value()).filter(v -> !v.isBlank());
+                        return (key.isPresent() ? ref.withIdempotencyKey(key.get()) : ref).callJson(m.command(), arg == null || arg.length == 0 ? null : arg);
+                    })
                     .thenApply(result -> HttpResponse.create().withEntity(HttpEntities.create(ContentTypes.APPLICATION_JSON, result)))
                     .exceptionally(err -> error(RouteTable.status(err), RouteTable.message(err)));
         }

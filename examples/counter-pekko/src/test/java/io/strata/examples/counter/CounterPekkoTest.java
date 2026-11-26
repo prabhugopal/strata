@@ -36,6 +36,14 @@ class CounterPekkoTest {
         return http.send(req, HttpResponse.BodyHandlers.ofString());
     }
 
+    String sendKeyed(StrataRuntime strata, String path, String key) throws Exception {
+        var req = HttpRequest.newBuilder(URI.create("http://localhost:" + PekkoHttpExtension.boundAddress(strata).getPort() + path))
+                .header("Idempotency-Key", key).POST(HttpRequest.BodyPublishers.noBody()).build();
+        var res = http.send(req, HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, res.statusCode(), res.body());
+        return res.body();
+    }
+
     String send(StrataRuntime strata, String method, String path, String body) throws Exception {
         var res = request(strata, method, path, body);
         assertEquals(200, res.statusCode(), res.body());
@@ -52,11 +60,16 @@ class CounterPekkoTest {
             assertEquals(400, request(strata, "POST", "/counters/alice/add", "\"ten\"").statusCode());
             assertEquals(405, request(strata, "GET", "/counters/alice/increment", null).statusCode());
             assertEquals(404, request(strata, "GET", "/nothing/here", null).statusCode());
+            // An idempotency key: the retry gets the first answer, and the counter moves once.
+            assertEquals("12", sendKeyed(strata, "/counters/alice/increment", "retry-1"));
+            assertEquals("12", sendKeyed(strata, "/counters/alice/increment", "retry-1"));
+            assertEquals("12", send(strata, "GET", "/counters/alice", null));
+            assertEquals("13", sendKeyed(strata, "/counters/alice/increment", "retry-2"));
             // The generated typed client, in-process.
-            assertEquals(16L, CounterClient.of(strata, "alice").add(5).toCompletableFuture().get());
+            assertEquals(18L, CounterClient.of(strata, "alice").add(5).toCompletableFuture().get());
         }
         try (var strata = start()) {
-            assertEquals("16", send(strata, "GET", "/counters/alice", null), "state committed by the previous process");
+            assertEquals("18", send(strata, "GET", "/counters/alice", null), "state committed by the previous process");
         }
     }
 }
