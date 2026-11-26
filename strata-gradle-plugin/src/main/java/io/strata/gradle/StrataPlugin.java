@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Properties;
 
 /**
- * {@code id("io.strata")}: adds Strata to a JVM project. With the java plugin it adds the
+ * {@code id("io.github.strata-jvm.strata")}: adds Strata to a JVM project. With the java plugin it adds the
  * Strata BOM, strata-core, the runtime modules chosen in {@code strata { }}, strata-processor
  * (javac, and kapt when the Kotlin kapt plugin is applied), and the JVM flags Strata needs to
  * tests, JavaExec tasks and application start scripts. Task {@code strataInfo} shows the result.

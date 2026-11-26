@@ -47,5 +47,6 @@ junit-params = { module = "org.junit.jupiter:junit-jupiter-params" }
 junit-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 
 [plugins]
+gradle-plugin-publish = { id = "com.gradle.plugin-publish", version = "2.2.1" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }

@@ -3,7 +3,13 @@ title: Quick start
 description: From an empty project to a running, crash-proof counter.
 ---
 
-import { Steps } from '@astrojs/starlight/components';
+import { Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+
+:::caution[Not published yet]
+Strata 0.1.0 isn't on Maven Central or the Gradle Plugin Portal yet. Until it is, build it from
+[the repository](https://github.com/strata-jvm/strata) and publish it to your machine:
+`./gradlew publishToMavenLocal`, then add `mavenLocal()` to your repositories.
+:::
 
 <Steps>
 
@@ -14,7 +20,7 @@ import { Steps } from '@astrojs/starlight/components';
    plugins {
        java
        application
-       id("io.strata")
+       id("io.github.strata-jvm.strata") version "0.1.0"
    }
    ```
 
@@ -42,6 +48,68 @@ import { Steps } from '@astrojs/starlight/components';
    stop the process however you like, start it again, and `alice` is still at 1.
 
 </Steps>
+
+## Other build tools
+
+Every build tool reads Maven Central, so Strata's libraries work in all of them. The Gradle
+plugin does the setup for you; elsewhere, add the runtime and the annotation processor (Java and
+Kotlin entities; Scala and Clojure don't need it), and pass the JVM flags Strata needs
+(`strata.jvm.args` in [gradle.properties](https://github.com/strata-jvm/strata/blob/main/gradle.properties))
+when you run.
+
+<Tabs syncKey="build">
+<TabItem label="Maven">
+
+```xml
+<dependencies>
+  <dependency>
+    <groupId>io.github.strata-jvm</groupId>
+    <artifactId>strata-pekko</artifactId>
+    <version>0.1.0</version>
+  </dependency>
+</dependencies>
+<build><plugins><plugin>
+  <artifactId>maven-compiler-plugin</artifactId>
+  <configuration>
+    <annotationProcessorPaths>
+      <path>
+        <groupId>io.github.strata-jvm</groupId>
+        <artifactId>strata-processor</artifactId>
+        <version>0.1.0</version>
+      </path>
+    </annotationProcessorPaths>
+  </configuration>
+</plugin></plugins></build>
+```
+
+</TabItem>
+<TabItem label="sbt">
+
+```scala
+libraryDependencies += "io.github.strata-jvm" % "strata-pekko" % "0.1.0"
+```
+
+</TabItem>
+<TabItem label="Leiningen">
+
+```clojure
+:dependencies [[io.github.strata-jvm/strata-clojure "0.1.0"]
+               [io.github.strata-jvm/strata-pekko "0.1.0"]]
+```
+
+</TabItem>
+<TabItem label="deps.edn">
+
+```clojure
+{:deps {io.github.strata-jvm/strata-clojure {:mvn/version "0.1.0"}
+        io.github.strata-jvm/strata-pekko   {:mvn/version "0.1.0"}}}
+```
+
+</TabItem>
+</Tabs>
+
+`strata-bom` keeps every Strata module on one version; Spring Boot apps use
+`strata-spring-boot-starter` ([Spring Boot](../../guides/spring/)).
 
 Next: [the shop example](../../start/shop/) uses every construct, and [durable
 invocations](../../concepts/durable-invocations/) shows what happens when a node dies mid-command.

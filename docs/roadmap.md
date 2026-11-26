@@ -28,6 +28,12 @@ Ideas that don't pass stay under "Ideas to weigh separately", not in the plan.
   Pekko's own idle passivation off. A duplicate `strata.pekko.passivation.idle-timeout` was added
   and removed the same day.
 
+- **Ready to publish** (2026-11-26): Apache-2.0 license; coordinates `io.github.strata-jvm`
+  (Maven Central only accepts a namespace you own) and plugin id `io.github.strata-jvm.strata`;
+  sources, javadoc and Central's POM fields on every module; signing from secrets;
+  `scripts/check-release.py` checks a bundle against Central's rules; `release.yml` publishes on a
+  `v*` tag (or dry-runs from the Actions tab). The first release waits on the accounts below.
+
 ## Next, in order
 
 1. **Entity history: archive and flashback.** Keep the journal and earlier state versions instead
@@ -59,7 +65,6 @@ Ideas that don't pass stay under "Ideas to weigh separately", not in the plan.
   claims on top of it, not the database.
 
 - Load tests on dedicated hardware.
-- Publishing to Maven Central.
 - Stratum views for invocations, timers and leases.
 - System views over the cluster, Oracle `V$`-style (e.g. stalled commands, journal size per
   type), shown live in Stratum.
@@ -73,7 +78,10 @@ Ideas that don't pass stay under "Ideas to weigh separately", not in the plan.
 - Both repos are in the `strata-jvm` organization since 2026-11-26: `strata-jvm/strata`
   (public; docs at https://strata-jvm.github.io/strata/) and `strata-jvm/stratum` (private,
   branches `main` and `strata`).
-- Choose a LICENSE (Apache-2.0 suggested).
+- First release, waiting on accounts only you can create, then their secrets in the
+  organization (names in `.github/workflows/release.yml`): a Sonatype Central account with the
+  `io.github.strata-jvm` namespace verified, a Gradle Plugin Portal account, and a signing key
+  (publish its public half to keys.openpgp.org). Run the release workflow as a dry run first.
 - Commit email: switch to a GitHub noreply address?
 - Delete the `backup-before-rewrite` branch once it's no longer needed.
 

@@ -1,7 +1,7 @@
 plugins {
     java
     application
-    id("io.strata")
+    id("io.github.strata-jvm.strata")
 }
 
 repositories { mavenCentral() }

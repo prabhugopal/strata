@@ -75,7 +75,7 @@ walkthrough of a command surviving a crash.
 | `strata-http` | Entity routes and the management API on Pekko HTTP. |
 | `strata-spring-boot-starter` | Optional: Spring Boot configuration, routes on WebFlux, services from beans. |
 | `strata-clojure` | `defentity` for Clojure. |
-| `strata-gradle-plugin`, `strata-bom` | `id("io.strata")`: dependencies, processor, JVM flags, container image, Kubernetes manifests and deploy. |
+| `strata-gradle-plugin`, `strata-bom` | `id("io.github.strata-jvm.strata")`: dependencies, processor, JVM flags, container image, Kubernetes manifests and deploy. |
 | `strata-bench` | Throughput and latency benchmark ([results](docs/benchmarks.md)). |
 | `cli/` | The `strata` command (Rust) and `strata-client`, the Rust client Stratum (the desktop observer) uses. |
 | `examples/` | `shop` (everything), `counter-pekko` and `counter-spring`, `services`, `kubernetes`, and one example per language. |
@@ -138,7 +138,13 @@ An alpha: the core is built and tested, not yet run in production.
 **Not done yet** (in order, with design notes, in [docs/roadmap.md](docs/roadmap.md)):
 
 - Load tests on dedicated hardware (laptop numbers are in [docs/benchmarks.md](docs/benchmarks.md)).
-- Publishing artifacts to Maven Central (until then: `./gradlew publishAllPublicationsToLocalRepository`).
+- Publishing: the release workflow is ready ([release.yml](.github/workflows/release.yml)); the first
+  release waits on the Maven Central and Gradle Plugin Portal accounts. Until then:
+  `./gradlew publishToMavenLocal`.
 - Keeping each entity's full history, and operations on it (interrupt, cancel, revert).
 - Long waits inside one command (`sleep` for days), Temporal-style; Strata uses timers and commands.
 - Wasm entities (on [Endive](https://github.com/bytecodealliance/endive)).
+
+## License
+
+[Apache License 2.0](LICENSE).

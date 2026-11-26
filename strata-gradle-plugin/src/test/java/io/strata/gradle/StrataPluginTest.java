@@ -12,7 +12,7 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Builds and runs a fresh app that only applies {@code id("io.strata")}: the processor must
+ * Builds and runs a fresh app that only applies the plugin ({@code id("io.github.strata-jvm.strata")}): the processor must
  * generate the entity, the runtime must be on the classpath, and the JVM flags must reach `run`.
  */
 class StrataPluginTest {
@@ -33,7 +33,7 @@ class StrataPluginTest {
                 plugins {
                     java
                     application
-                    id("io.strata")
+                    id("%s")
                 }
                 repositories {
                     maven { url = uri("%s") }
@@ -42,7 +42,7 @@ class StrataPluginTest {
                 java { toolchain.languageVersion.set(JavaLanguageVersion.of(%s)) }
                 application { mainClass.set("demo.Main") }
                 %s
-                """.formatted(repo, System.getProperty("strata.test.toolchain"), strataBlock));
+                """.formatted(System.getProperty("strata.test.pluginId"), repo, System.getProperty("strata.test.toolchain"), strataBlock));
         write("src/main/java/demo/Counter.java", """
                 package demo;
                 import io.strata.annotation.*;

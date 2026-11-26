@@ -1,4 +1,7 @@
-plugins { `java-gradle-plugin` }
+plugins {
+    `java-gradle-plugin`
+    alias(libs.plugins.gradle.plugin.publish)   // publishPlugins: the Gradle Plugin Portal
+}
 
 description = "Gradle plugin: Strata dependencies (BOM-aligned), the annotation processor, and the JVM flags Strata needs."
 
@@ -7,12 +10,16 @@ val pluginRelease = providers.gradleProperty("strata.gradle-plugin.java.release"
 tasks.withType<JavaCompile>().configureEach { options.release.set(pluginRelease) }
 
 gradlePlugin {
+    website.set(providers.gradleProperty("strata.pom.url"))
+    vcsUrl.set(providers.gradleProperty("strata.pom.url"))
     plugins {
         create("strata") {
-            id = "io.strata"
+            // The Plugin Portal, like Maven Central, accepts only an id under a namespace you own.
+            id = providers.gradleProperty("strata.plugin.id").get()
             implementationClass = "io.strata.gradle.StrataPlugin"
             displayName = "Strata"
             description = project.description
+            tags.set(listOf("durable-execution", "pekko", "actors", "kubernetes"))
         }
     }
 }
@@ -53,6 +60,7 @@ tasks.test {
     // The functional test builds a sample app against freshly published Strata modules.
     (published + "strata-bom").forEach { dependsOn(":$it:publishAllPublicationsToLocalRepository") }
     systemProperty("strata.test.repo", localRepo.get().asFile.absolutePath)
+    systemProperty("strata.test.pluginId", providers.gradleProperty("strata.plugin.id").get())
     systemProperty("strata.test.toolchain", providers.gradleProperty("strata.java.toolchain").get())
     providers.gradleProperty("org.gradle.java.installations.paths").orNull?.let { systemProperty("strata.test.jdks", it) }
 }

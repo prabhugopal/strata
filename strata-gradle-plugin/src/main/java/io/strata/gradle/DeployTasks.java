@@ -28,8 +28,9 @@ final class DeployTasks {
     private DeployTasks() {}
 
     /** Writes a Dockerfile next to a copy of the app's distribution ({@code installDist}). */
+    @org.gradle.api.tasks.CacheableTask
     public abstract static class Dockerfile extends DefaultTask {
-        @InputDirectory public abstract DirectoryProperty getDistribution();
+        @InputDirectory @org.gradle.api.tasks.PathSensitive(org.gradle.api.tasks.PathSensitivity.RELATIVE) public abstract DirectoryProperty getDistribution();
         @Input public abstract Property<String> getBase();
         @Input public abstract Property<String> getAppName();
         @Input public abstract ListProperty<Integer> getPorts();
@@ -56,6 +57,7 @@ final class DeployTasks {
     }
 
     /** Runs command lines in order, failing on the first that fails. */
+    @org.gradle.work.DisableCachingByDefault(because = "Runs docker, kubectl or minikube: its effect is outside the build")
     public abstract static class Commands extends DefaultTask {
         @Input public abstract ListProperty<List<String>> getCommands();
         @Inject protected abstract ExecOperations getExec();
@@ -74,6 +76,7 @@ final class DeployTasks {
     }
 
     /** Writes the Kubernetes manifests: app.yaml, secret.yaml and (dev) postgres.yaml. */
+    @org.gradle.api.tasks.CacheableTask
     public abstract static class ManifestsTask extends DefaultTask {
         @Input public abstract Property<String> getAppName();
         @Input public abstract Property<String> getNamespace();
