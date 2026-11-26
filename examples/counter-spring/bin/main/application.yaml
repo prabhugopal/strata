@@ -1,0 +1,14 @@
+# Example settings. Anything under strata.* maps onto Strata's config tree (reference.conf);
+# keys not set here keep Strata's defaults.
+server:
+  port: ${PORT:8080}
+  shutdown: graceful
+
+strata:
+  store:
+    kind: ${STRATA_STORE:jdbc}
+    jdbc:
+      url: ${STRATA_JDBC_URL:jdbc:h2:file:./data/counter}
+  pekko:
+    system:
+      pekko.remote.artery.canonical.port: ${STRATA_PORT:25520}

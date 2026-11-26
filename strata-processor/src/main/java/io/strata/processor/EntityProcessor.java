@@ -57,7 +57,7 @@ public final class EntityProcessor extends AbstractProcessor {
     static final String DEFAULT_CLIENT_SUFFIX = "Client";
     private static final String PROVIDERS = "META-INF/services/io.strata.spi.EntityTypeProvider";
     /** Names the generated client uses for itself; entity methods can't take them. */
-    private static final Set<String> CLIENT_RESERVED = Set.of("of", "entityId", "snapshot", "withIdempotencyKey");
+    private static final Set<String> CLIENT_RESERVED = Set.of("of", "entityId", "snapshot", "withIdempotencyKey", "blocking");
 
     private final Set<String> providers = new TreeSet<>();
 
@@ -187,6 +187,11 @@ public final class EntityProcessor extends AbstractProcessor {
                 http.put("GET", q.get()); http.put("POST", q.post());
             }
             http.values().removeIf(Http.NONE::equals);
+            if (http.isEmpty() && ann.expose()) {
+                if (mount == null) throw new Invalid(e, "expose = true needs a mount, e.g. @Entity(mount = \"/things/{id}\", expose = true)");
+                String path = "/" + kebab(command);
+                http.put(q != null && m.getParameters().isEmpty() ? "GET" : "POST", path);
+            }
             if (http.size() > 1) throw new Invalid(m, "set at most one HTTP method (has " + String.join(", ", http.keySet()) + ")");
             String httpMethod = null, httpPath = null;
             if (http.size() == 1) {
@@ -328,9 +333,9 @@ public final class EntityProcessor extends AbstractProcessor {
          .append("public final class ").append(m.clientClass()).append(" {\n")
          .append("    private final ").append(ref).append(" ref;\n\n")
          .append("    private ").append(m.clientClass()).append("(").append(ref).append(" ref) { this.ref = ref; }\n\n")
-         .append("    /** The entity with this id (created with its initial state on first use). */\n")
-         .append("    public static ").append(m.clientClass()).append(" of(io.strata.StrataRuntime strata, String id) {\n")
-         .append("        return new ").append(m.clientClass()).append("(strata.ref(").append(m.entityClass()).append(".TYPE, id));\n")
+         .append("    /** The entity with this id (created on first use), from a runtime or, inside an entity, from its injected Entities. */\n")
+         .append("    public static ").append(m.clientClass()).append(" of(io.strata.Entities entities, String id) {\n")
+         .append("        return new ").append(m.clientClass()).append("(entities.ref(").append(m.entityClass()).append(".TYPE, id));\n")
          .append("    }\n\n")
          .append("    public String entityId() { return ref.id(); }\n\n")
          .append("    /** The same entity; a repeated call with the same key gets the first call's outcome instead of running again. */\n")
@@ -350,6 +355,24 @@ public final class EntityProcessor extends AbstractProcessor {
             String resultType = isGeneric(op.returns()) ? "new io.strata.TypeRef<" + result + ">() {}" : erasure(op.returns()) + ".class";
             b.append(") {\n        return ref.call(").append(literal(op.command())).append(", ").append(arg).append(", ").append(resultType).append(");\n    }\n");
         }
+        // The same calls, waiting for the answer: for code on virtual threads, such as commands
+        // calling other entities (errors come back as themselves, not wrapped).
+        b.append("\n    /** These calls, waiting for each answer (on virtual threads, e.g. inside another entity's command). */\n")
+         .append("    public Blocking blocking() { return new Blocking(); }\n\n")
+         .append("    public final class Blocking {\n")
+         .append("        private Blocking() {}\n");
+        for (Op op : m.ops()) {
+            String result = boxed(op.returns());
+            boolean isVoid = op.returns().getKind() == TypeKind.VOID;
+            b.append("\n        public ").append(isVoid ? "void" : op.returns().toString()).append(' ').append(op.method().getSimpleName()).append("(");
+            for (int i = 0; i < op.params().size(); i++) {
+                Param p = op.params().get(i);
+                b.append(i == 0 ? "" : ", ").append(p.type()).append(' ').append(p.name());
+            }
+            b.append(") {\n            ").append(isVoid ? "" : "return ").append("io.strata.Await.result(").append(m.clientClass()).append(".this.")
+             .append(op.method().getSimpleName()).append("(").append(String.join(", ", op.params().stream().map(Param::name).toList())).append("));\n        }\n");
+        }
+        b.append("    }\n");
         return b.append("}\n").toString();
     }
 

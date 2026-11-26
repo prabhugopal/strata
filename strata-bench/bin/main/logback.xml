@@ -1,0 +1,4 @@
+<configuration>
+  <appender name="out" class="ch.qos.logback.core.ConsoleAppender"><encoder><pattern>%msg%n</pattern></encoder></appender>
+  <root level="WARN"><appender-ref ref="out"/></root>
+</configuration>

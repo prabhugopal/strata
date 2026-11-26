@@ -64,4 +64,13 @@ class CoreTest {
         var bad = StrataSettings.from(ConfigFactory.parseString("strata.store.executor = elastic").withFallback(ConfigFactory.load()));
         assertThrows(IllegalArgumentException.class, bad::newStoreExecutor);
     }
+
+    @org.junit.jupiter.api.Test
+    void commandLineArgumentsBecomeConfig() {
+        var c = Strata.arguments("--strata.http.port=9000", "--strata.entity.classes=[\"a.B\"]", "--strata.call-timeout=3s");
+        org.junit.jupiter.api.Assertions.assertEquals(9000, c.getInt("strata.http.port"));
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of("a.B"), c.getStringList("strata.entity.classes"));
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.Duration.ofSeconds(3), c.getDuration("strata.call-timeout"));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> Strata.arguments("port=9000"));
+    }
 }

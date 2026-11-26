@@ -14,6 +14,44 @@ import java.util.stream.Collectors;
 public final class Strata {
     private Strata() {}
 
+    /**
+     * Start a node the way an app's {@code main} wants: the application's config plus any
+     * {@code --some.key=value} arguments (they win), and a shutdown hook that stops the node
+     * gracefully (entities finish their command and hand over) when the process is told to stop.
+     *
+     * <pre>{@code
+     * public static void main(String[] args) { Strata.run(args); }
+     * }</pre>
+     *
+     * Or no main at all: {@link StrataMain} does exactly this (the Gradle plugin uses it by default).
+     */
+    public static StrataRuntime run(String... args) {
+        return run(Services.NONE, args);
+    }
+
+    /** As {@link #run(String...)}, with services for entities' {@code @Inject} fields. */
+    public static StrataRuntime run(Services services, String... args) {
+        Config config = arguments(args).withFallback(ConfigFactory.load()).resolve();
+        StrataRuntime runtime = start(config, services);
+        if (config.getBoolean("strata.shutdown-hook")) {
+            Runtime.getRuntime().addShutdownHook(new Thread(runtime::close, "strata-shutdown"));
+        }
+        return runtime;
+    }
+
+    /** {@code --key=value} arguments as config (values parsed as HOCON, so numbers and lists work). */
+    static Config arguments(String... args) {
+        StringBuilder hocon = new StringBuilder();
+        for (String a : args) {
+            if (!a.startsWith("--") || !a.contains("=")) {
+                throw new IllegalArgumentException("Arguments look like --strata.http.port=9000, not " + a);
+            }
+            int eq = a.indexOf('=');
+            hocon.append(a, 2, eq).append(" = ").append(a.substring(eq + 1)).append('\n');
+        }
+        return ConfigFactory.parseString(hocon.toString(), com.typesafe.config.ConfigParseOptions.defaults().setOriginDescription("command line"));
+    }
+
     /** Start with the application's config (application.conf, -D properties, environment). */
     public static StrataRuntime start() {
         return start(ConfigFactory.load());

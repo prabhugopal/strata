@@ -89,6 +89,19 @@ final class Samples {
         @Command public void note(String s) throws Exception { Audit.write(s); }
     }
 
+    /** Waiting for another entity's answer is fine; starting background work isn't. */
+    @Entity
+    static class Waits {
+        @Inject io.strata.Entities entities;
+        @Inject io.strata.Ctx ctx;
+        @Command public Object ask(java.util.concurrent.CompletionStage<Object> answer) { return answer.toCompletableFuture().join() + "@" + ctx.now(); }
+    }
+
+    @Entity
+    static class StartsBackgroundWork {
+        @Command public void fire() { java.util.concurrent.CompletableFuture.runAsync(() -> { }); }
+    }
+
     @Entity
     static class MethodReference {
         @Command public long later() { java.util.function.LongSupplier clock = System::nanoTime; return clock.getAsLong(); }

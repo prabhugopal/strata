@@ -8,12 +8,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** A bank account: each one lives on exactly one node of the cluster at a time. */
-@Entity(mount = "/accounts/{id}")
+@Entity(mount = "/accounts/{id}", expose = true)   // POST /deposit, POST /withdraw, GET /history…
 public class Account {
     private long balance;
     private List<String> history = new ArrayList<>();
 
-    @Command(post = "/deposit")
+    @Command
     public long deposit(long amount) {
         if (amount <= 0) throw new IllegalArgumentException("amount must be positive");
         balance += amount;
@@ -21,7 +21,7 @@ public class Account {
         return balance;
     }
 
-    @Command(post = "/withdraw")
+    @Command
     public long withdraw(long amount) {
         if (amount > balance) throw new IllegalStateException("insufficient funds");
         balance -= amount;
@@ -32,6 +32,6 @@ public class Account {
     @Query(get = "")
     public long balance() { return balance; }
 
-    @Query(get = "/history")
+    @Query
     public List<String> history() { return history; }
 }

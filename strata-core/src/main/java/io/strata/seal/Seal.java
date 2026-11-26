@@ -40,6 +40,7 @@ public final class Seal {
     }
 
     private static final System.Logger LOG = System.getLogger(Seal.class.getName());
+    private static final String PROVIDER = "io/strata/spi/EntityTypeProvider";
 
     private final Mode mode;
     private final Rules allow, deny;
@@ -86,7 +87,11 @@ public final class Seal {
             if (!seen.add(cls)) continue;
             byte[] bytes = read(loader, cls);
             if (bytes == null) { out.add(new Violation(cls.replace('/', '.'), cls.replace('/', '.'), "class file not found")); continue; }
-            new ClassReader(bytes).accept(new Scanner(cls, loader, home, services, queue, out), ClassReader.SKIP_FRAMES);
+            ClassReader reader = new ClassReader(bytes);
+            // Generated entity types (strata-processor's XxxEntity) only register the type at
+            // start; they never run inside a command, so they're Strata's, not entity code.
+            if (!cls.equals(internal(entity.getName())) && java.util.Arrays.asList(reader.getInterfaces()).contains(PROVIDER)) continue;
+            reader.accept(new Scanner(cls, loader, home, services, queue, out), ClassReader.SKIP_FRAMES);
         }
         return out;
     }

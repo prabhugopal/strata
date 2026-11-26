@@ -40,4 +40,12 @@ public @interface Entity {
      * e.g. {@code /carts/{cartId}}. Empty means no HTTP routes.
      */
     String mount() default "";
+
+    /**
+     * Give every command and query a route under the mount without spelling it out: commands get
+     * {@code POST /<name>}, queries {@code GET /<name>} ({@code POST} when they take arguments),
+     * with names in kebab-case. A path set on a method still wins. Off by default, so nothing is
+     * served unless asked; the routes are listed by the management API and {@code strata types}.
+     */
+    boolean expose() default false;
 }

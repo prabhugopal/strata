@@ -12,7 +12,6 @@ java { toolchain.languageVersion.set(JavaLanguageVersion.of(providers.gradleProp
 // Compile for Java 21; the plugin picks a matching JRE image (eclipse-temurin:21-jre).
 tasks.withType<JavaCompile>().configureEach { options.release.set(21); options.compilerArgs.add("-parameters") }
 
-application { mainClass.set("io.strata.examples.k8s.Main") }
 
 strata {
     kubernetes {

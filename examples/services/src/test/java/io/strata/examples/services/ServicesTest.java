@@ -26,6 +26,7 @@ class ServicesTest {
                 .add("discounts", Pricing.class, item -> 10L)
                 .add(Payments.class, (order, cents) -> "R")      // Order (same module) needs these
                 .add(Mailer.class, text -> { })
+                .add(Notifier.class, text -> { })
                 .build();
     }
 
@@ -62,7 +63,7 @@ class ServicesTest {
     @Test
     void aMissingServiceFailsAtStartupNamingWhatIsMissing() {
         var e = assertThrows(StrataException.class, () -> start(Services.builder().add(Pricing.class, i -> 1L)
-                .add(Payments.class, (o, c) -> "R").add(Mailer.class, t -> { }).build(), Map.of()));
+                .add(Payments.class, (o, c) -> "R").add(Mailer.class, t -> { }).add(Notifier.class, t -> { }).build(), Map.of()));
         assertTrue(e.getMessage().contains("basket") && e.getMessage().contains("discounts") && e.getMessage().contains("Pricing"), e.getMessage());
     }
 

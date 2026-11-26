@@ -9,6 +9,7 @@ import io.strata.EntityType;
 import io.strata.Reply;
 import io.strata.StrataException;
 import io.strata.StrataException.Kind;
+import io.strata.durability.Invocation;
 import io.strata.durability.Journal;
 import io.strata.durability.JournalWriteException;
 import io.strata.management.EntityObserver;
@@ -47,7 +48,7 @@ import java.util.function.BiFunction;
  */
 final class EntityActor<S> {
     record Deps<S>(Codec codec, StateStore store, Durability durability, Duration passivateAfter, int stashCapacity,
-                   EntityObserver observer, EntityType.Bound<S> inject, Executor executor, Duration resultRetention) {}
+                   EntityObserver observer, EntityType.Bound<S> inject, Executor executor, Duration resultRetention, boolean offThread) {}
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -68,7 +69,7 @@ final class EntityActor<S> {
                         org.apache.pekko.actor.typed.ActorRef<ClusterSharding.ShardCommand> shard) {
         this.type = type; this.id = id; this.deps = deps; this.ctx = ctx; this.stash = stash; this.shard = shard;
         this.persistent = deps.durability() == Durability.PERSISTENT;
-        this.offThread = type.injects();
+        this.offThread = deps.offThread();
     }
 
     static <S> Behavior<Msg> create(EntityType<S> type, String id, Deps<S> deps, org.apache.pekko.actor.typed.ActorRef<ClusterSharding.ShardCommand> shard) {
@@ -162,7 +163,8 @@ final class EntityActor<S> {
         if (!offThread) {
             Reply<S, Object> reply;
             try {
-                reply = handle(def, working(), arg);
+                S working = working();
+                reply = new Invocation(type.name(), id, null).run(() -> handle(def, working, arg));
             } catch (Exception e) {
                 return failed(inv, kindOf(e), type.name() + "." + inv.command() + " failed: " + rootMessage(e), started, null);
             }
@@ -170,7 +172,8 @@ final class EntityActor<S> {
         }
         if (def.readOnly() || !persistent) {
             S working = working();
-            return await(CompletableFuture.supplyAsync(() -> unchecked(() -> handle(def, working, arg)), deps.executor()), (reply, err) -> err != null
+            Invocation here = new Invocation(type.name(), id, null);
+            return await(CompletableFuture.supplyAsync(() -> unchecked(() -> here.run(() -> handle(def, working, arg))), deps.executor()), (reply, err) -> err != null
                     ? failed(inv, kindOf(err), type.name() + "." + inv.command() + " failed: " + rootMessage(err), started, null)
                     : completed(inv, def, reply, null, started));
         }
@@ -195,11 +198,11 @@ final class EntityActor<S> {
         }
         S working = working();
         ClassLoader loader = type.stateType().getClassLoader();
-        Journal journal = new Journal(recorded, (seq, entry) ->
+        Journal journal = new Journal(invocationId, recorded, (seq, entry) ->
                 deps.store().record(type.name(), id, invocationId, seq, entry).toCompletableFuture().join(), deps.codec());
         return await(CompletableFuture.supplyAsync(() -> {
             Thread.currentThread().setContextClassLoader(loader);
-            return unchecked(() -> journal.run(() -> handle(def, working, arg)));
+            return unchecked(() -> new Invocation(type.name(), id, journal).run(() -> handle(def, working, arg)));
         }, deps.executor()), (reply, err) -> {
             if (err == null) return completed(inv, def, reply, invocationId, started);
             Throwable cause = unwrap(err);

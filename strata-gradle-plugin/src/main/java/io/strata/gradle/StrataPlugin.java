@@ -73,6 +73,9 @@ public final class StrataPlugin implements Plugin<Project> {
             project.getTasks().withType(JavaExec.class).configureEach(t -> t.getJvmArgumentProviders().add(() -> ext.getJvmArgs().get()));
         });
 
+        // An app that is only entities needs no main class of its own.
+        project.getPluginManager().withPlugin("application", app ->
+                project.getExtensions().getByType(JavaApplication.class).getMainClass().convention(props.getProperty("mainClass")));
         project.getPluginManager().withPlugin("application", app -> project.afterEvaluate(p -> {
             JavaApplication a = p.getExtensions().getByType(JavaApplication.class);
             List<String> args = new ArrayList<>();

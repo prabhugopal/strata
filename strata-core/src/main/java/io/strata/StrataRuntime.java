@@ -3,13 +3,14 @@ package io.strata;
 import java.util.Collection;
 
 /** A running Strata node. Register entity types, then get refs to entities by id. */
-public interface StrataRuntime extends AutoCloseable {
+public interface StrataRuntime extends Entities, AutoCloseable {
     /** Register an entity type. Registering the same instance again does nothing. */
     <S> void register(EntityType<S> type);
 
     /** The registered entity types, in registration order. */
     Collection<EntityType<?>> types();
 
+    @Override
     <S> EntityRef<S> ref(EntityType<S> type, String id);
 
     StrataSettings settings();

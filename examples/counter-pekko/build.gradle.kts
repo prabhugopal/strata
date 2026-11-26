@@ -16,6 +16,6 @@ dependencies {
 }
 
 application {
-    mainClass.set("io.strata.examples.counter.Main")
+    mainClass.set("io.strata.StrataMain") // no Main of our own: the app is just its entities
     applicationDefaultJvmArgs = providers.gradleProperty("strata.jvm.args").get().split(" ").filter { it.isNotBlank() }
 }

@@ -2,7 +2,11 @@ package io.strata.pekko;
 
 import io.strata.Codec;
 import io.strata.EntityRef;
+import io.strata.Ctx;
 import io.strata.Durability;
+import io.strata.Entities;
+import io.strata.durability.RecordedEntities;
+import io.strata.durability.RuntimeCtx;
 import io.strata.EntityType;
 import io.strata.durability.Recording;
 import io.strata.Services;
@@ -102,9 +106,14 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         // Services are looked up once; interface services of persistent entities are wrapped so
         // every call is recorded (a class can't be wrapped: its calls aren't recorded, and we say so).
         boolean recorded = type.durability(settings) == Durability.PERSISTENT;
+        java.util.Set<Class<?>> requested = java.util.concurrent.ConcurrentHashMap.newKeySet();
         Services forType = new Services() {
             @Override
             public <T> java.util.Optional<T> find(Class<T> cls, String name) {
+                requested.add(cls);
+                // Strata's own: they record themselves (and only inside recorded invocations).
+                if (cls == Ctx.class) return java.util.Optional.of(cls.cast(RuntimeCtx.INSTANCE));
+                if (cls == Entities.class) return java.util.Optional.of(cls.cast(new RecordedEntities(PekkoStrataRuntime.this)));
                 return services.find(cls, name).map(svc -> {
                     if (!recorded) return svc;
                     if (cls.isInterface()) return Recording.wrap(cls, svc);
@@ -115,6 +124,8 @@ public final class PekkoStrataRuntime implements StrataRuntime {
             }
         };
         EntityType.Bound<S> check = type.bind(forType); // fail before registering if a service is missing
+        // Commands may block (services, other entities) unless the entity only uses Ctx.
+        boolean offThread = requested.stream().anyMatch(c -> c != Ctx.class);
         synchronized (types) {
             Registered<?> existing = types.putIfAbsent(type.name(), new Registered<>(type, key));
             if (existing != null) {
@@ -125,7 +136,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         // Services were looked up once above; a missing one failed registration (and so startup).
         EntityType.Bound<S> bound = check;
         var deps = new EntityActor.Deps<>(codec, store, type.durability(settings), settings.passivateAfter(), pekko.stashCapacity(), observability, bound,
-                commands, settings.config().getDuration("strata.durability.result-retention"));
+                commands, settings.config().getDuration("strata.durability.result-retention"), offThread);
         sharding.init(Entity.of(key, ctx -> EntityActor.create(type, ctx.getEntityId(), deps, ctx.getShard()))
                 .withStopMessage(Stop.INSTANCE));
     }

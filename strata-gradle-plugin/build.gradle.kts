@@ -33,7 +33,7 @@ val pluginProperties = tasks.register("strataPluginProperties") {
     doLast {
         val f = generated.get().file("io/strata/gradle/strata-plugin.properties").asFile
         f.parentFile.mkdirs()
-        f.writeText("version=$version\ngroup=$group\njvmArgs=$jvmArgs\nminJava=$minJava\nmanagementBase=$managementBase\n")
+        f.writeText("version=$version\ngroup=$group\njvmArgs=$jvmArgs\nminJava=$minJava\nmanagementBase=$managementBase\nmainClass=io.strata.StrataMain\n")
     }
 }
 sourceSets.main { resources.srcDir(pluginProperties) }

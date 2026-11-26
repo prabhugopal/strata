@@ -24,32 +24,34 @@ public final class Journal {
         void write(int seq, byte[] entry) throws Exception;
     }
 
-    private static final ThreadLocal<Journal> CURRENT = new ThreadLocal<>();
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    private final String invocationId;
     private final List<byte[]> recorded;
     private final Writer writer;
     private final Codec codec;
     private int seq;
     private int replayed;
 
-    public Journal(List<byte[]> recorded, Writer writer, Codec codec) {
+    public Journal(String invocationId, List<byte[]> recorded, Writer writer, Codec codec) {
+        this.invocationId = invocationId;
         this.recorded = recorded;
         this.writer = writer;
         this.codec = codec;
     }
 
     /** The journal of the invocation running on this thread, or null. */
-    public static Journal current() { return CURRENT.get(); }
+    public static Journal current() {
+        Invocation i = Invocation.current();
+        return i == null ? null : i.journal();
+    }
 
-    /** Run {@code body} with this journal recording its service calls. */
-    public <T> T run(Callable<T> body) throws Exception {
-        CURRENT.set(this);
-        try {
-            return body.call();
-        } finally {
-            CURRENT.remove();
-        }
+    public String invocationId() { return invocationId; }
+
+    /** What a recorded call does when it runs for real; gets the call's number (1-based). */
+    @FunctionalInterface
+    public interface Real {
+        Object run(int seq) throws Exception;
     }
 
     /** How many calls were answered from the journal rather than run. */
@@ -60,6 +62,11 @@ public final class Journal {
 
     /** One service call, by name (e.g. "Payments.charge"), returning {@code resultType}. */
     public Object call(String name, Type resultType, Callable<Object> real) throws Throwable {
+        return call(name, resultType, (Real) n -> real.call());
+    }
+
+    /** As above; the real call gets its number, e.g. to make an idempotency key for it. */
+    public Object call(String name, Type resultType, Real real) throws Throwable {
         int n = ++seq;
         if (n <= recorded.size()) {
             replayed++;
@@ -75,12 +82,13 @@ public final class Journal {
         Object result;
         Exception failure = null;
         try {
-            result = real.call();
+            result = real.run(n);
             entry.set("ok", JSON.readTree(codec.encode(result)));
         } catch (Exception ex) {
             result = null;
             failure = ex;
-            entry.putObject("error").put("type", ex.getClass().getName()).put("message", ex.getMessage());
+            ObjectNode err = entry.putObject("error").put("type", ex.getClass().getName()).put("message", ex.getMessage());
+            if (ex instanceof StrataException se) err.put("kind", se.kind().name());
         }
         try {
             writer.write(n, JSON.writeValueAsBytes(entry));
@@ -95,6 +103,7 @@ public final class Journal {
     private static Exception rebuild(JsonNode error) {
         String type = error.path("type").asText();
         String message = error.path("message").isNull() ? null : error.path("message").asText();
+        if (error.has("kind")) return new StrataException(StrataException.Kind.parse(error.get("kind").asText()), message);
         try {
             Class<?> c = Class.forName(type, false, Thread.currentThread().getContextClassLoader());
             if (Exception.class.isAssignableFrom(c)) {

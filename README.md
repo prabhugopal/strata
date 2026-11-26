@@ -17,10 +17,19 @@ public class Counter {
 }
 ```
 
+No `main` needed: the Gradle plugin runs `io.strata.StrataMain`, which finds the entities,
+serves their routes and the management API, and stops gracefully on shutdown
+(`--strata.http.port=9000`-style arguments override config). With your own main it's one line:
+
 ```java
-StrataRuntime strata = Strata.start();                     // finds @Entity classes, serves their routes
+public static void main(String[] args) { Strata.run(args); }
 CounterClient.of(strata, "alice").add(5);                  // generated, typed: CompletionStage<Long>
+CounterClient.of(strata, "alice").blocking().add(5);       // the same, waiting for the answer
 ```
+
+`@Entity(mount = "/counters/{id}", expose = true)` gives every command `POST /<name>` and every
+query `GET /<name>` without spelling paths out (explicit paths still win); it's opt-in, so nothing
+is served unless asked, and the routes are listed by `strata types` and the management API.
 
 ```sh
 curl -X POST localhost:8080/counters/alice/increment       # 1
@@ -157,6 +166,30 @@ Entity type order isn't sealed: its code reaches outside Strata, so its effects 
 `strata.seal.mode` is `enforce` (default), `warn` or `off`. Allow a library you trust with
 `strata.seal.allow += "com.acme.money.**"`. The check runs once per type at start; nothing at run
 time. Types made with the builder API (plain lambdas, Clojure's `defentity`) aren't checked.
+
+## Time, randomness and other entities
+
+Sealed code can't read the JVM's clock or random sources, or call other entities directly. It
+injects Strata's:
+
+```java
+@Entity
+public class Transfer {
+    @Inject Ctx ctx;              // ctx.now(), ctx.randomLong(), ctx.randomUuid(), ctx.entityId()
+    @Inject Entities entities;    // other entities, called exactly once
+
+    @Command public String run(Request r) {
+        WalletClient.of(entities, r.from()).blocking().withdraw(r.cents());
+        WalletClient.of(entities, r.to()).blocking().deposit(r.cents());
+        return "done at " + ctx.now();
+    }
+}
+```
+
+Inside a recorded invocation `ctx` values are recorded (a resumed command sees the same time),
+and each call to another entity is recorded and carries the key `<invocation>/<call number>`,
+so the target applies it once even if the caller resumes after sending it. An entity that only
+uses `Ctx` keeps the fast inline path. Calling yourself is refused (it would wait forever).
 
 ## Durable invocations
 
@@ -378,6 +411,8 @@ Kubernetes pod spec).
 - A node stopped between two service calls: the next node resumes the command, the first effect
   isn't repeated, a recorded exception replays, and the journal is empty afterwards. Idempotency
   keys return the first outcome (success or failure) without running again, over HTTP too.
+- A transfer interrupted between debiting one wallet and crediting the other finishes on the next
+  node with each wallet changed exactly once; `ctx.now()` taken before the crash is replayed.
 - Annotation mistakes fail compilation with a message on the offending element.
 - Bad configuration fails at startup.
 - The same API works from Java, Kotlin, Scala 3 and Clojure.

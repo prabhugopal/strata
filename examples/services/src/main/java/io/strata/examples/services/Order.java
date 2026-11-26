@@ -1,5 +1,6 @@
 package io.strata.examples.services;
 
+import io.strata.Ctx;
 import io.strata.annotation.Command;
 import io.strata.annotation.Entity;
 import io.strata.annotation.Inject;
@@ -14,13 +15,16 @@ import io.strata.annotation.Query;
 public class Order {
     private String status = "new";
     private String receipt;
+    private java.time.Instant paidAt;
 
     @Inject Payments payments;
     @Inject Mailer mailer;
+    @Inject Ctx ctx;
 
     @Command
     public String checkout(long cents) throws Payments.PaymentDeclined {
         String r = payments.charge("order", cents);
+        paidAt = ctx.now();                        // recorded: a resumed checkout keeps this time
         mailer.send("Thanks! Receipt " + r);
         status = "paid";
         receipt = r;
@@ -47,4 +51,7 @@ public class Order {
 
     @Query
     public String receipt() { return receipt; }
+
+    @Query
+    public java.time.Instant paidAt() { return paidAt; }
 }

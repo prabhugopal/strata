@@ -18,6 +18,7 @@ class SealTest {
     @Test
     void pureLogicAndInjectedServicesAreSealed() {
         assertEquals("", violations(Samples.Clean.class));
+        assertEquals("", violations(Samples.Waits.class), "Ctx, Entities and waiting for a result are allowed");
     }
 
     @Test
@@ -31,6 +32,7 @@ class SealTest {
         assertTrue(violations(Samples.SharesState.class).contains("static mutable state"));
         assertTrue(violations(Samples.Reflects.class).contains("java.lang.Class#forName"));
         assertTrue(violations(Samples.MethodReference.class).contains("java.lang.System#nanoTime"), "method references are checked too");
+        assertTrue(violations(Samples.StartsBackgroundWork.class).contains("CompletableFuture#runAsync"));
     }
 
     @Test

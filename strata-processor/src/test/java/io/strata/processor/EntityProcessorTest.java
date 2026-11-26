@@ -85,6 +85,32 @@ class EntityProcessorTest {
     }
 
     @Test
+    void exposeGivesDefaultRoutesAndClientsHaveABlockingView() throws Exception {
+        var r = compile("p.Wallet", """
+                package p;
+                import io.strata.annotation.*;
+                @Entity(mount = "/wallets/{id}", expose = true)
+                public class Wallet {
+                    long b;
+                    @Command public long depositCash(long c) { return b += c; }
+                    @Command(put = "/reset") public void reset() { b = 0; }
+                    @Query public long balance() { return b; }
+                    @Query public long plus(long x) { return b + x; }
+                }
+                """);
+        assertTrue(r.ok(), r.errors());
+        String entity = Files.readString(r.out().resolve("p/WalletEntity.java"));
+        assertTrue(entity.contains(".route(\"POST\", \"/deposit-cash\", \"depositCash\")"), entity);
+        assertTrue(entity.contains(".route(\"PUT\", \"/reset\", \"reset\")"), "an explicit path wins");
+        assertTrue(entity.contains(".route(\"GET\", \"/balance\", \"balance\")"));
+        assertTrue(entity.contains(".route(\"POST\", \"/plus\", \"plus\")"), "a query with arguments uses POST");
+        String client = Files.readString(r.out().resolve("p/WalletClient.java"));
+        assertTrue(client.contains("public long depositCash(long c) {") && client.contains("io.strata.Await.result(WalletClient.this.depositCash(c))"), client);
+        assertTrue(client.contains("public void reset() {"), client);
+        assertRejected("@Entity(expose = true) public class E { @Command public void a() {} }", "expose = true needs a mount");
+    }
+
+    @Test
     void generatedNamesAreConfigurable() throws Exception {
         var r = compile("p.Counter", "package p; import io.strata.annotation.*; @Entity public class Counter { int n; @Command public int inc() { return ++n; } }",
                 "-Astrata.entitySuffix=Type", "-Astrata.clientSuffix=Ref");

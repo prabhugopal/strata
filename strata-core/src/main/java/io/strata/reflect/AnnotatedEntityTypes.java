@@ -108,6 +108,10 @@ public final class AnnotatedEntityTypes {
             if (cmd != null) { http.put("POST", cmd.post()); http.put("PUT", cmd.put()); http.put("PATCH", cmd.patch()); http.put("DELETE", cmd.delete()); }
             else { http.put("GET", q.get()); http.put("POST", q.post()); }
             http.values().removeIf(Http.NONE::equals);
+            if (http.isEmpty() && ann.expose()) {
+                if (ann.mount().isEmpty()) throw invalid(cls, "expose = true needs a mount");
+                http.put(q != null && m.getParameterCount() == 0 ? "GET" : "POST", "/" + kebab(command));
+            }
             if (http.size() > 1) throw invalid(cls, m.getName() + ": set at most one HTTP method");
             if (http.size() == 1) {
                 var r = http.entrySet().iterator().next();
