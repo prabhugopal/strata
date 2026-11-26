@@ -24,12 +24,16 @@ val pluginProperties = tasks.register("strataPluginProperties") {
     val group = project.group.toString()
     val jvmArgs = providers.gradleProperty("strata.jvm.args").get()
     val minJava = providers.gradleProperty("strata.java.release").get()
-    inputs.property("values", listOf(version, group, jvmArgs, minJava))
+    // The management API's base path, read from strata-core's reference.conf (its single source).
+    val conf = rootProject.file("strata-core/src/main/resources/reference.conf").readText()
+    val managementBase = Regex("""management \{.*?base-path = "([^"]+)"""", RegexOption.DOT_MATCHES_ALL).find(conf)?.groupValues?.get(1)
+        ?: error("strata.management.base-path not found in strata-core's reference.conf")
+    inputs.property("values", listOf(version, group, jvmArgs, minJava, managementBase))
     outputs.dir(generated)
     doLast {
         val f = generated.get().file("io/strata/gradle/strata-plugin.properties").asFile
         f.parentFile.mkdirs()
-        f.writeText("version=$version\ngroup=$group\njvmArgs=$jvmArgs\nminJava=$minJava\n")
+        f.writeText("version=$version\ngroup=$group\njvmArgs=$jvmArgs\nminJava=$minJava\nmanagementBase=$managementBase\n")
     }
 }
 sourceSets.main { resources.srcDir(pluginProperties) }

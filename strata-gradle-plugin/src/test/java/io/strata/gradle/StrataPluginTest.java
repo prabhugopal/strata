@@ -88,6 +88,29 @@ class StrataPluginTest {
     }
 
     @Test
+    void kubernetesManifestsFollowTheStrataBlock() throws IOException {
+        project("""
+                tasks.withType<JavaCompile>().configureEach { options.release.set(21) }
+                strata { kubernetes { replicas.set(2); namespace.set("shop"); env.put("STRATA_CALL_TIMEOUT", "5s") } }
+                """);
+        gradle("strataManifests", "strataDockerfile", "-q");
+        String app = Files.readString(dir.resolve("build/strata/k8s/app.yaml"));
+        assertTrue(app.contains("pekko://strata@demo-0.demo-cluster.shop.svc.cluster.local:25520,pekko://strata@demo-1.demo-cluster.shop.svc.cluster.local:25520\""), app);
+        assertTrue(app.contains("replicas: 2") && app.contains("namespace: shop") && app.contains("/strata/health/ready"), app);
+        assertTrue(app.contains("{name: STRATA_CALL_TIMEOUT, value: \"5s\"}"), app);
+        assertTrue(Files.readString(dir.resolve("build/strata/k8s/postgres.yaml")).contains("postgres:"));
+        Path pw = dir.resolve(".strata/postgres-password");
+        String first = Files.readString(pw);
+        assertTrue(Files.readString(dir.resolve("build/strata/k8s/secret.yaml")).contains(first.trim()));
+        assertTrue(Files.getPosixFilePermissions(pw).equals(java.nio.file.attribute.PosixFilePermissions.fromString("rw-------")));
+        gradle("strataManifests", "--rerun-tasks", "-q");
+        assertTrue(Files.readString(pw).equals(first), "the database password is kept across builds");
+        String dockerfile = Files.readString(dir.resolve("build/strata/image/Dockerfile"));
+        assertTrue(dockerfile.contains("FROM eclipse-temurin:21-jre") && dockerfile.contains("ENTRYPOINT [\"/app/bin/demo\"]"), dockerfile);
+        assertTrue(Files.exists(dir.resolve("build/strata/image/app/bin/demo")));
+    }
+
+    @Test
     void modulesFollowTheStrataBlock() throws IOException {
         project("strata { spring.set(true); jdbc.set(false) }");
         String info = gradle("strataInfo", "-q").getOutput();

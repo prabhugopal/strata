@@ -1,6 +1,8 @@
 package io.strata.gradle;
 
+import org.gradle.api.Action;
 import org.gradle.api.provider.ListProperty;
+import org.gradle.api.tasks.Nested;
 import org.gradle.api.provider.Property;
 
 /**
@@ -28,4 +30,14 @@ public abstract class StrataExtension {
 
     /** JVM flags for tests, `run` and start scripts. Default: what this Strata version needs. */
     public abstract ListProperty<String> getJvmArgs();
+
+    /** The container image (strataDockerfile, strataImage). */
+    @Nested public abstract ImageSpec getImage();
+
+    public void image(Action<? super ImageSpec> action) { action.execute(getImage()); }
+
+    /** Running on Kubernetes (strataManifests, strataDeploy, strataUndeploy). */
+    @Nested public abstract KubernetesSpec getKubernetes();
+
+    public void kubernetes(Action<? super KubernetesSpec> action) { action.execute(getKubernetes()); }
 }

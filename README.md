@@ -161,6 +161,47 @@ locally with `./gradlew publishAllPublicationsToLocalRepository` (to `build/repo
 repository. The plugin targets Java 17 (`strata.gradle-plugin.java.release`) so it loads in any
 Gradle; the libraries it adds need Java 21.
 
+## Running on Kubernetes
+
+The plugin builds a container image and the manifests for a Strata cluster. Each pod is a node
+(a StatefulSet, so pods have stable names); the nodes find each other through a headless Service,
+and every node is a seed, so a restarted pod rejoins rather than forming a cluster of its own.
+Probes use `/strata/health/live` and `/strata/health/ready`. A development PostgreSQL is deployed
+alongside unless `postgres` is off and `jdbcUrl` points at a real database.
+
+```kotlin
+strata {
+    image { name.set("registry.example.com/shop/accounts"); tag.set("1.4.0") }   // default: project name, "dev"
+    kubernetes {
+        replicas.set(3)
+        namespace.set("shop")
+        load.set("push")                 // minikube (default) | kind | push | none
+        postgres.set(false)
+        jdbcUrl.set("jdbc:postgresql://orders-db:5432/strata")   // credentials from Secret <name>-db
+        env.put("STRATA_MANAGEMENT_TOKEN", "…")                 // any strata.* setting by env var
+    }
+}
+```
+
+| Task | Does |
+|---|---|
+| `strataDockerfile` | Dockerfile + the app's distribution in `build/strata/image` (JRE matching the compiled Java version, non-root) |
+| `strataImage` | Builds the image |
+| `strataManifests` | Writes `build/strata/k8s/*.yaml` |
+| `strataDeploy` | Image → cluster (`load`), `kubectl apply`, rolls the nodes, waits for the rollout |
+| `strataUndeploy` | Deletes it all again |
+
+`examples/kubernetes` is a standalone app built only with the plugin:
+
+```sh
+minikube start --memory 6g --cpus 4
+./gradlew -p examples/kubernetes strataDeploy
+kubectl port-forward svc/accounts 8080:8080
+strata server add k8s http://localhost:8080 && strata cluster
+```
+
+Defaults for all of this are in the plugin's `deploy-defaults.properties`.
+
 ## The `strata` CLI
 
 A single binary (Rust, in `cli/`) that talks to any node's management API. Servers are kept in
@@ -255,6 +296,9 @@ Kubernetes pod spec).
   queries with arguments, discovery on and off, state across restarts.
 - The management API end to end over HTTP: describe, list, read, run, events, cluster, metrics,
   token and read-only mode.
+- Two nodes form a cluster: entities spread over both, calls and errors cross nodes, and when a
+  node leaves its entities move to the other with their committed state.
+- The plugin's image runs (non-root, JVM flags applied) and its manifests list every pod as a seed.
 - A fresh app that only applies the Gradle plugin compiles its `@Entity`, runs, and gets the JVM
   flags in `run` and in its start script.
 - Annotation mistakes fail compilation with a message on the offending element.
@@ -263,6 +307,6 @@ Kubernetes pod spec).
 
 ## Next
 
-Container image and `strata deploy` to Kubernetes · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
+Kubernetes Lease-based downing and autoscaling · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
 signals · M3 three-node cluster on Kubernetes (bootstrap, lease, rolling restarts) · M4 management API
 and metrics for Stratum · M5 Spring AI agent. PostgreSQL integration tests need Docker (Testcontainers).
