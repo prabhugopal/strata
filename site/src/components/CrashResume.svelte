@@ -43,16 +43,24 @@
     { line: 5, node: 'b', down: true, layers: [], charges: 1, emails: 1, state: 'paid', note: 'One transaction commits the new state and clears the record. One charge, one email, no code written for it.' },
   ];
 
-  // Steps can be linked: ?step=7 opens the walkthrough at step 7.
-  const linked = typeof window !== 'undefined' ? Number(new URLSearchParams(window.location.search).get('step')) : 0;
+  // Steps can be linked: ?step=7 opens the walkthrough at step 7, ?play=1 starts it playing.
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const linked = Number(params.get('step'));
   let i = $state(linked >= 1 && linked <= steps.length ? linked - 1 : 0);
-  let playing = $state(false);
+  let playing = $state(params.get('play') === '1');
+  const STEP_MS = 2600;
   const s = $derived(steps[i]);
   const reduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  // While playing, move on one step after another. Reading i here makes the timer re-arm after
+  // every step (reading it only inside the callback would advance once and stop).
   $effect(() => {
+    const at = i;
     if (!playing) return;
-    const t = setTimeout(() => (i < steps.length - 1 ? i++ : (playing = false)), 2600);
+    const t = setTimeout(() => {
+      if (at < steps.length - 1) i = at + 1;
+      else playing = false;
+    }, STEP_MS);
     return () => clearTimeout(t);
   });
 

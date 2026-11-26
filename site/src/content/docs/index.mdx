@@ -14,6 +14,14 @@ hero:
 ---
 
 import CrashResume from '../../components/CrashResume.svelte';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <LinkCard title="Try it" description="A crash-proof counter in four steps, then a whole shop." href="/start/quick-start/" />
+  <LinkCard title="Understand it" description="Entities, the seal, and how a command survives its node dying." href="/concepts/durable-invocations/" />
+  <LinkCard title="Build with it" description="Services, Kotlin, Scala and Clojure, Spring Boot, Kubernetes." href="/guides/services/" />
+  <LinkCard title="Look it up" description="Every setting, annotation, endpoint and CLI command." href="/reference/configuration/" />
+</CardGrid>
 
 ## A node dies in the middle of a checkout
 

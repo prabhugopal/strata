@@ -3,6 +3,8 @@ title: Introduction
 description: What Strata is, and what it does for you.
 ---
 
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
 Strata runs **entities**: objects with an id, state and commands, like an order, an account or a
 shopping cart. Each entity lives in exactly one place in a cluster and handles one command at a
 time, so its code never deals with concurrency. Its state is committed before every reply, so a
@@ -32,3 +34,10 @@ code that could reach the outside world any other way than through its injected 
 - **Stores** (`strata-store-jdbc`): PostgreSQL in production, H2 for development, or memory.
 - **HTTP** (`strata-http` or the Spring starter): routes from annotations, plus the management API.
 - **Tools**: the Gradle plugin, the `strata` CLI, and [Stratum](/guides/stratum/), a desktop app that watches nodes.
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Quick start" description="An entity running, and surviving a restart, in four steps." href="/start/quick-start/" />
+  <LinkCard title="Watch a crash being survived" description="Step through a command resumed on another node." href="/concepts/durable-invocations/" />
+</CardGrid>

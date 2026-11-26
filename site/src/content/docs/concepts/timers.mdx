@@ -9,16 +9,28 @@ a **durable timer** that runs a command later:
 ```java
 @Entity
 public class Approval {
-    private String status = "draft", expiry;
-    @Inject Entities entities;  @Inject Ctx ctx;
+    private String status = "draft";
+    private String expiry;
+    @Inject Entities entities;
+    @Inject Ctx ctx;
 
     @Command public String request() {
         status = "waiting";
-        expiry = ApprovalClient.of(entities, ctx.entityId()).later(Duration.ofDays(3)).expire();
+        expiry = ApprovalClient.of(entities, ctx.entityId())
+                .later(Duration.ofDays(3))
+                .expire();                       // a durable timer: its id
         return expiry;
     }
-    @Command public String approve() { entities.cancel(expiry); return status = "approved"; }
-    @Command public String expire()  { if (status.equals("waiting")) status = "expired"; return status; }
+
+    @Command public String approve() {           // a signal: just a command
+        entities.cancel(expiry);
+        return status = "approved";
+    }
+
+    @Command public String expire() {            // runs by itself after 3 days
+        if (status.equals("waiting")) status = "expired";
+        return status;
+    }
 }
 ```
 
