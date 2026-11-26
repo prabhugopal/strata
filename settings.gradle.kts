@@ -15,6 +15,7 @@ include(
     "strata-spring-boot-starter",
     "strata-bom",
     "strata-gradle-plugin",
+    "strata-bench",
     "examples:counter-spring",
     "examples:counter-pekko",
     "examples:interop-kotlin",
