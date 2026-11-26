@@ -8,6 +8,7 @@ kotlin = "2.4.21"
 clojure = "1.12.7"
 config = "1.4.10"
 jackson = "2.23.0"
+asm = "9.11.1"
 h2 = "2.5.252"
 hikaricp = "7.1.0"
 postgresql = "42.7.15"
@@ -27,6 +28,7 @@ scala-library = { module = "org.scala-lang:scala-library", version.ref = "scala2
 scala3-library = { module = "org.scala-lang:scala3-library_3", version.ref = "scala3" }
 clojure = { module = "org.clojure:clojure", version.ref = "clojure" }
 typesafe-config = { module = "com.typesafe:config", version.ref = "config" }
+asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
 jackson-module-scala3 = { module = "com.fasterxml.jackson.module:jackson-module-scala_3", version.ref = "jackson" }
 jackson-jdk8 = { module = "com.fasterxml.jackson.datatype:jackson-datatype-jdk8", version.ref = "jackson" }

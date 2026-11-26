@@ -41,6 +41,7 @@ import java.util.function.Function;
 public final class PekkoStrataRuntime implements StrataRuntime {
     private final StrataSettings settings;
     private final Services services;
+    private final io.strata.seal.Seal seal;
     private final PekkoSettings pekko;
     private final Codec codec;
     private final ExecutorService io;
@@ -58,6 +59,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     public PekkoStrataRuntime(StrataSettings settings, Services services) {
         this.settings = settings;
         this.services = services;
+        this.seal = new io.strata.seal.Seal(settings.config());
         this.pekko = PekkoSettings.from(settings.config());
         this.codec = new Codec(settings);
         this.io = settings.newStoreExecutor();
@@ -92,6 +94,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
             Registered<?> already = types.get(type.name());
             if (already != null && already.type() == type) return;
         }
+        seal.apply(type);                                 // refuse unsealed entity code (strata.seal)
         EntityType.Bound<S> check = type.bind(services); // fail before registering if a service is missing
         synchronized (types) {
             Registered<?> existing = types.putIfAbsent(type.name(), new Registered<>(type, key));

@@ -140,6 +140,24 @@ Whoever hosts Strata provides them, and entity code doesn't change:
 Spring never manages entities, and entities never become beans: Pekko owns their lifecycle,
 placement and concurrency; Spring (when used) owns the app around them.
 
+## The seal
+
+Entity code may reach the outside world only through its injected services and Strata's API.
+When an `@Entity` type registers, Strata reads its bytecode, and that of your classes it uses,
+and checks every class and member referenced against `strata.seal.allow` / `deny`. Clocks,
+randomness, threads, sockets, files, JDBC, reflection and shared static state are refused. A
+service call is the only way out, which is what lets Strata record effects and replay them.
+
+```
+Entity type order isn't sealed: its code reaches outside Strata, so its effects can't be recorded.
+  shop.Order.pay (line 31) uses java.net.http.HttpClient#send (not on strata.seal.allow)
+  shop.Order.stamp (line 40) uses java.time.Instant#now (denied by "java.time.**#now")
+```
+
+`strata.seal.mode` is `enforce` (default), `warn` or `off`. Allow a library you trust with
+`strata.seal.allow += "com.acme.money.**"`. The check runs once per type at start; nothing at run
+time. Types made with the builder API (plain lambdas, Clojure's `defentity`) aren't checked.
+
 ## Management API
 
 Served on the same HTTP server as entity routes (strata-http or Spring), under

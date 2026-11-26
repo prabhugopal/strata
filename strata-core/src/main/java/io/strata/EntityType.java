@@ -73,6 +73,7 @@ public final class EntityType<S> {
     private final Map<String, CommandDef<S>> commands;
     private final List<Route> routes;
     private final Injector<S> injector;
+    private final Class<?> source;
 
     private EntityType(Builder<S> b) {
         this.name = b.name;
@@ -89,6 +90,7 @@ public final class EntityType<S> {
         }
         this.routes = List.copyOf(b.routes);
         this.injector = b.injector;
+        this.source = b.source;
     }
 
     /** The single id variable of a mount path, e.g. {@code /carts/{cartId}} → {@code cartId}. */
@@ -124,6 +126,9 @@ public final class EntityType<S> {
     public String idVariable() { return idVariable; }
 
     public List<Route> routes() { return routes; }
+
+    /** The class this type was made from (an @Entity class), checked by the seal; null for builder-made types. */
+    public Class<?> source() { return source; }
 
     /** Whether instances have {@code @Inject} fields to fill. */
     public boolean injects() { return injector != null; }
@@ -166,6 +171,7 @@ public final class EntityType<S> {
         private final Map<String, CommandDef<S>> commands = new LinkedHashMap<>();
         private final List<Route> routes = new ArrayList<>();
         private Injector<S> injector;
+        private Class<?> source;
 
         private Builder(String name, Class<S> stateType) {
             if (!EntityTypeNames.valid(name)) {
@@ -179,6 +185,9 @@ public final class EntityType<S> {
         public Builder<S> initial(Supplier<S> initial) { this.initial = initial; return this; }
 
         public Builder<S> durability(Durability durability) { this.durability = durability; return this; }
+
+        /** The @Entity class this type is made from; the seal checks its code (strata.seal). */
+        public Builder<S> source(Class<?> source) { this.source = source; return this; }
 
         /** Fill {@code @Inject} fields of every instance; see {@link Injector}. */
         public Builder<S> inject(Injector<S> injector) { this.injector = injector; return this; }

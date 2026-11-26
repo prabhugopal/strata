@@ -226,6 +226,7 @@ public final class EntityProcessor extends AbstractProcessor {
          .append("    public static final io.strata.EntityType<").append(s).append("> TYPE = io.strata.EntityType.builder(")
          .append(literal(m.name())).append(", ").append(s).append(".class)\n")
          .append("            .initial(").append(s).append("::new)\n")
+         .append("            .source(").append(s).append(".class)\n")
          .append("            .mutableState()\n");
         if (m.durability() != null) b.append("            .durability(io.strata.Durability.").append(m.durability().name()).append(")\n");
         if (!m.injected().isEmpty()) {

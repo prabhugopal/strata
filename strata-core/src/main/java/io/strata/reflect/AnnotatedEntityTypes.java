@@ -70,7 +70,7 @@ public final class AnnotatedEntityTypes {
 
         String name = ann.name().isEmpty() ? kebab(cls.getSimpleName()) : ann.name();
         if (!EntityTypeNames.valid(name)) throw invalid(cls, "type name \"" + name + "\" isn't valid; set @Entity(name = ...)");
-        EntityType.Builder<S> b = EntityType.builder(name, cls).initial(() -> newInstance(ctor)).mutableState();
+        EntityType.Builder<S> b = EntityType.builder(name, cls).initial(() -> newInstance(ctor)).mutableState().source(cls);
         if (!ann.durability().isEmpty()) b.durability(Durability.parse(ann.durability()));
         if (!ann.mount().isEmpty()) b.mount(ann.mount());
         if (!injected.isEmpty()) {
