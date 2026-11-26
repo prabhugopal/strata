@@ -13,6 +13,8 @@ include(
     "strata-processor",
     "strata-clojure",
     "strata-spring-boot-starter",
+    "strata-bom",
+    "strata-gradle-plugin",
     "examples:counter-spring",
     "examples:counter-pekko",
     "examples:interop-kotlin",

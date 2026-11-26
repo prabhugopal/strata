@@ -63,6 +63,9 @@ acknowledged. Idle entities are stopped and reload on next use.
 | `strata-store-jdbc` | Committed state in PostgreSQL (or H2 for local development), with an optimistic revision per entity. |
 | `strata-clojure` | `defentity` for Clojure, and loading entities from `strata.clojure.entities`. |
 | `strata-http` | Serves entity routes with Pekko HTTP on its own port. No Spring. |
+| `strata-bom` | One version for every Strata module. |
+| `strata-gradle-plugin` | `id("io.strata")`: dependencies, processor, JVM flags. |
+| `cli/` | The `strata` command (Rust) and `strata-client`, the Rust client Stratum uses. |
 | `strata-spring-boot-starter` | Optional Spring Boot support: `strata.*` in `application.yaml`, `EntityType` beans registered, entity routes on Spring WebFlux, lifecycle tied to Spring. |
 | `examples/counter-pekko` | The annotated counter on Pekko HTTP, no Spring. |
 | `examples/counter-spring` | The same counter inside a Spring Boot WebFlux app. |
@@ -130,6 +133,33 @@ Served on the same HTTP server as entity routes (strata-http or Spring), under
 Set `strata.management.token` (`STRATA_MANAGEMENT_TOKEN`) to require a bearer token, and
 `allow-invoke = false` for read-only. Limits, event capacity, histogram buckets and schema depth
 are all settings.
+
+## Gradle plugin
+
+One line sets up an app: the Strata BOM, `strata-core`, the runtime modules, `strata-processor`
+(javac, and kapt when the Kotlin kapt plugin is applied), and the JVM flags Strata needs on
+tests, `run` and the start scripts.
+
+```kotlin
+plugins {
+    java
+    application
+    id("io.strata")
+}
+
+strata {                    // all optional
+    http.set(true)          // strata-http (Pekko HTTP); default on unless spring
+    spring.set(false)       // strata-spring-boot-starter instead
+    jdbc.set(true)          // strata-store-jdbc (choose it at run time with strata.store.kind)
+    clojure.set(false)      // strata-clojure
+    processor.set(true)     // strata-processor
+}
+```
+
+`./gradlew strataInfo` shows what the project uses. Until Strata is on Maven Central, publish it
+locally with `./gradlew publishAllPublicationsToLocalRepository` (to `build/repo`) and add that
+repository. The plugin targets Java 17 (`strata.gradle-plugin.java.release`) so it loads in any
+Gradle; the libraries it adds need Java 21.
 
 ## The `strata` CLI
 
@@ -225,13 +255,14 @@ Kubernetes pod spec).
   queries with arguments, discovery on and off, state across restarts.
 - The management API end to end over HTTP: describe, list, read, run, events, cluster, metrics,
   token and read-only mode.
+- A fresh app that only applies the Gradle plugin compiles its `@Entity`, runs, and gets the JVM
+  flags in `run` and in its start script.
 - Annotation mistakes fail compilation with a message on the offending element.
 - Bad configuration fails at startup.
 - The same API works from Java, Kotlin, Scala 3 and Clojure.
 
 ## Next
 
-Gradle plugin (dependencies, processor, JVM flags, container image) · `strata deploy` and
-Kubernetes · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
+Container image and `strata deploy` to Kubernetes · M1 durable steps (`ctx.step`, journal and replay, `ctx.now/random`, crash injection) · M2 timers and
 signals · M3 three-node cluster on Kubernetes (bootstrap, lease, rolling restarts) · M4 management API
 and metrics for Stratum · M5 Spring AI agent. PostgreSQL integration tests need Docker (Testcontainers).
