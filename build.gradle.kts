@@ -44,5 +44,9 @@ subprojects {
             testLogging { events("failed"); exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
         }
         tasks.withType<JavaExec>().configureEach { jvmArgs(strataJvmArgs) }
+        // The version a node reports (management API /info, Stratum, strata info).
+        tasks.withType<Jar>().configureEach {
+            manifest { attributes("Implementation-Title" to project.name, "Implementation-Version" to project.version) }
+        }
     }
 }
