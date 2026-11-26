@@ -67,6 +67,12 @@ The Pekko runtime: clustering.
 | `strata.pekko.seed-nodes` | `""` | `STRATA_SEED_NODES` | With cluster-mode = seed-nodes: the seed node addresses, comma-separated, e.g. "pekko://strata@app-0.app-cluster:25520,pekko://strata@app-1.app-cluster:25520". Empty keeps strata.pekko.system.pekko.cluster.seed-nodes as configured. |
 | `strata.pekko.startup-timeout` | `30s` |  | How long start() waits for this node to become a cluster member. |
 | `strata.pekko.startup-poll-interval` | `20ms` |  | How often start() checks whether the node has joined. |
+| `strata.pekko.split-brain.strategy` | `"keep-majority"` | `STRATA_SPLIT_BRAIN` | keep-majority  - the side with more nodes (default; an even split stops both sides) lease-majority - the side holding a lease in Strata's store; the side that can't reach the                  store couldn't commit anyway. Recommended for 2 nodes or even sizes. keep-oldest, static-quorum - see Pekko's documentation (set its settings under strata.pekko.system) |
+| `strata.pekko.split-brain.stable-after` | `20s` |  | How long the cluster must be stable (no members joining, leaving or unreachable) before deciding. |
+| `strata.pekko.split-brain.lease.heartbeat-interval` | `12s` |  | A held lease is renewed this often, for this long; a node that goes silent loses it after heartbeat-timeout. |
+| `strata.pekko.split-brain.lease.heartbeat-timeout` | `120s` |  |  |
+| `strata.pekko.split-brain.lease.operation-timeout` | `5s` |  |  |
+| `strata.pekko.split-brain.lease.acquire-delay-for-minority` | `2s` |  | The minority side waits this long before trying for the lease, so the majority gets it first. |
 | `strata.pekko.tls.mode` | `"off"` | `STRATA_TLS` | off      - plain TCP (development) keystore - JKS or PKCS12 key and trust stores (the settings below) pem      - PEM files in a directory, as cert-manager and other secret managers write them:            tls.key (RSA, PKCS#1 or unencrypted PKCS#8), tls.crt, ca.crt. Reread as they            rotate; all nodes' certificates must share a subject name (CN or SAN). |
 | `strata.pekko.tls.keystore.key-store` | `""` | `STRATA_TLS_KEY_STORE` |  |
 | `strata.pekko.tls.keystore.key-store-password` | `""` | `STRATA_TLS_KEY_STORE_PASSWORD` |  |
@@ -92,6 +98,7 @@ The JDBC store.
 | `strata.store.jdbc.journal-table` | `"strata_journal"` |  | Unfinished invocations' service-call results, and outcomes kept for idempotency keys. |
 | `strata.store.jdbc.results-table` | `"strata_results"` |  |  |
 | `strata.store.jdbc.timers-table` | `"strata_timers"` |  |  |
+| `strata.store.jdbc.leases-table` | `"strata_leases"` |  |  |
 | `strata.store.jdbc.create-schema` | `true` |  | Create the tables on start if they don't exist. Turn off when migrations own the schema. |
 | `strata.store.jdbc.max-state-bytes` | `1048576` |  | Largest state, in bytes, the created column holds on databases that need a size (H2). PostgreSQL uses BYTEA, which has no fixed limit. |
 | `strata.store.jdbc.statement-timeout` | `10s` |  | Seconds a single statement may take before it's cancelled. |

@@ -17,6 +17,7 @@ record PekkoSettings(String clusterMode, Duration startupTimeout, Duration start
             system = com.typesafe.config.ConfigFactory.parseMap(java.util.Map.of("pekko.cluster.seed-nodes", seeds)).withFallback(system);
         }
         system = tls(c.getConfig("tls")).withFallback(system);
+        system = splitBrain(c.getConfig("split-brain")).withFallback(system);
         String mode = c.getString("cluster-mode");
         if (!mode.equals("single") && !mode.equals("seed-nodes")) {
             throw new IllegalArgumentException("strata.pekko.cluster-mode must be \"single\" or \"seed-nodes\", not \"" + mode + "\"");
@@ -79,5 +80,30 @@ record PekkoSettings(String clusterMode, Duration startupTimeout, Duration start
         required(path, what);
         if (!java.nio.file.Files.isReadable(java.nio.file.Path.of(path))) throw new IllegalArgumentException("TLS is on but " + what + " " + path + " isn't a readable file");
         return path;
+    }
+
+    /** Lease config path Pekko loads StoreLease from (inside the actor system's config). */
+    static final String LEASE_CONFIG_PATH = "strata-store-lease";
+
+    /** strata.pekko.split-brain as Pekko's split-brain resolver settings. */
+    static Config splitBrain(Config sb) {
+        String strategy = sb.getString("strategy").trim();
+        if (!java.util.Set.of("keep-majority", "lease-majority", "keep-oldest", "static-quorum").contains(strategy)) {
+            throw new IllegalArgumentException("strata.pekko.split-brain.strategy must be keep-majority, lease-majority, keep-oldest or static-quorum, not \"" + strategy + "\"");
+        }
+        String r = "pekko.cluster.split-brain-resolver.";
+        java.util.Map<String, Object> m = new java.util.HashMap<>();
+        m.put(r + "active-strategy", strategy);
+        m.put(r + "stable-after", sb.getDuration("stable-after").toMillis() + "ms");
+        if (strategy.equals("lease-majority")) {
+            Config l = sb.getConfig("lease");
+            m.put(r + "lease-majority.lease-implementation", LEASE_CONFIG_PATH);
+            m.put(r + "lease-majority.acquire-lease-delay-for-minority", l.getDuration("acquire-delay-for-minority").toMillis() + "ms");
+            m.put(LEASE_CONFIG_PATH + ".lease-class", StoreLease.class.getName());
+            m.put(LEASE_CONFIG_PATH + ".heartbeat-interval", l.getDuration("heartbeat-interval").toMillis() + "ms");
+            m.put(LEASE_CONFIG_PATH + ".heartbeat-timeout", l.getDuration("heartbeat-timeout").toMillis() + "ms");
+            m.put(LEASE_CONFIG_PATH + ".lease-operation-timeout", l.getDuration("operation-timeout").toMillis() + "ms");
+        }
+        return com.typesafe.config.ConfigFactory.parseMap(m);
     }
 }

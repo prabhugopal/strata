@@ -50,6 +50,18 @@ public interface StateStore extends AutoCloseable {
         return unsupported("record invocations, keys or timers");
     }
 
+    // ---- leases (one holder at a time; used to decide which side of a split cluster stays up) ----
+
+    /**
+     * Take or renew lease {@code name} for {@code owner} for {@code ttl}: succeeds if it's free,
+     * expired, or already {@code owner}'s. Expiry is judged by the store's clock, so nodes' clocks
+     * don't have to agree.
+     */
+    default CompletionStage<Boolean> acquireLease(String name, String owner, java.time.Duration ttl) { return unsupported("hold leases"); }
+
+    /** Give the lease up if {@code owner} holds it; completes with whether it did. */
+    default CompletionStage<Boolean> releaseLease(String name, String owner) { return unsupported("hold leases"); }
+
     // ---- timers -------------------------------------------------------------------------------
 
     /** Add a timer now (outside any command; inside a command timers go with its commit). */

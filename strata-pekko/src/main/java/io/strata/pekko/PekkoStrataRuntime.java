@@ -59,6 +59,12 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     private final ClusterSharding sharding;
     private final Map<String, Registered<?>> types = new LinkedHashMap<>(); // guarded by itself
     private final java.time.Instant startedAt = java.time.Instant.now();
+    /** Each node's store by actor system, so Pekko-created plugins (StoreLease) can reach it. */
+    private static final Map<org.apache.pekko.actor.ActorSystem, StateStore> STORES = new java.util.concurrent.ConcurrentHashMap<>();
+
+    static java.util.Optional<StateStore> storeOf(org.apache.pekko.actor.ActorSystem system) {
+        return java.util.Optional.ofNullable(STORES.get(system));
+    }
     private final Observability observability;
     private final String node;
     private final java.util.Deque<AutoCloseable> closeWith = new java.util.concurrent.ConcurrentLinkedDeque<>();
@@ -75,6 +81,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         this.store = StateStores.create(settings, io);
         this.system = ActorSystem.create(Behaviors.empty(), pekko.systemName(), pekko.systemConfig());
         this.sharding = ClusterSharding.get(system);
+        STORES.put(system.classicSystem(), store);
         Cluster cluster = Cluster.get(system);
         this.node = cluster.selfMember().address().toString();
         this.observability = new Observability(ManagementSettings.from(settings.config()), () -> node);
@@ -261,6 +268,13 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         @Override public boolean ready() { return Cluster.get(system).selfMember().status() == MemberStatus.up(); }
 
         @Override
+        public boolean live() {
+            if (system.whenTerminated().isCompleted()) return false;
+            MemberStatus s = Cluster.get(system).selfMember().status();
+            return s != MemberStatus.down() && s != MemberStatus.removed();
+        }
+
+        @Override
         public CompletionStage<ClusterView> cluster() {
             var state = Cluster.get(system).state();
             var unreachable = new java.util.HashSet<org.apache.pekko.cluster.Member>();
@@ -297,6 +311,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
     @Override
     public void close() {
         timerTicks.shutdownNow();
+        STORES.remove(system.classicSystem());
         for (AutoCloseable r; (r = closeWith.poll()) != null; ) {
             try { r.close(); } catch (Exception e) { system.log().warn("Couldn't close {}", r, e); }
         }

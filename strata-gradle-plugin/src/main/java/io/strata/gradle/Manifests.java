@@ -16,7 +16,7 @@ final class Manifests {
                   String serviceType, String cpu, String memory, int maxRamPercentage, int graceSeconds,
                   String managementBase, boolean postgres, String postgresImage, String postgresStorage,
                   String database, String user, String jdbcUrl, Map<String, String> env,
-                  String tlsSecret, String tlsMountPath) {}
+                  String tlsSecret, String tlsMountPath, String splitBrain) {}
 
     static String app(Params p) {
         String cluster = p.name() + "-cluster";
@@ -33,6 +33,7 @@ final class Manifests {
         env(env, "STRATA_PORT", String.valueOf(p.remotingPort()));
         env(env, "STRATA_HTTP_PORT", String.valueOf(p.httpPort()));
         env(env, "STRATA_STORE", "jdbc");
+        env(env, "STRATA_SPLIT_BRAIN", p.splitBrain());
         if (jdbc != null && !jdbc.isBlank()) env(env, "STRATA_JDBC_URL", jdbc);
         env.append(secretEnv("STRATA_JDBC_USER", p.name() + "-db", "user"));
         env.append(secretEnv("STRATA_JDBC_PASSWORD", p.name() + "-db", "password"));
@@ -109,6 +110,7 @@ final class Manifests {
                           readinessProbe:
                             httpGet: {path: %8$s/health/ready, port: http}
                             periodSeconds: 5
+                          # Fails once the node has been removed from its cluster, so it's restarted and rejoins.
                           livenessProbe:
                             httpGet: {path: %8$s/health/live, port: http}
                             initialDelaySeconds: 30

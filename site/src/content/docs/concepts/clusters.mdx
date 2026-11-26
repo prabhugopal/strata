@@ -28,6 +28,26 @@ the replacement pod rejoins the same cluster.
   others instead of starting a cluster of its own. The [Kubernetes guide](../../guides/kubernetes/)
   sets this up for you.
 
+## When a node dies or the network splits
+
+If nodes stop hearing each other, Pekko's split-brain resolver decides which side keeps running
+(after `strata.pekko.split-brain.stable-after`), and the other side stops. Your data is safe either
+way: every commit is fenced by revision, so two sides can't overwrite each other.
+
+| `strata.pekko.split-brain.strategy` (`STRATA_SPLIT_BRAIN`) | Keeps the side that |
+|---|---|
+| `keep-majority` (default) | has more nodes. On a tie, the side with the lowest address. |
+| `lease-majority` | holds a lease in Strata's store. The side that can't reach the store couldn't commit anyway. |
+
+The tie matters more than it sounds. Tested on two nodes: when the node with the lower address
+crashes, under `keep-majority` the **survivor stops itself**, a full outage from losing one node;
+under `lease-majority` the survivor takes the lease, removes the dead node, and serves every
+entity, including those that lived on the dead one. Use `lease-majority` for 2 nodes or any even
+size; the Kubernetes manifests do by default.
+
+A node that has been removed reports itself not live (`/strata/health/live` answers 503), so
+Kubernetes restarts it and it joins again.
+
 ## Encrypting traffic between nodes
 
 Entity calls travel between nodes, so in production encrypt them. With TLS on, nodes also

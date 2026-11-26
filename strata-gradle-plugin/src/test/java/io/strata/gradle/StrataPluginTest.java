@@ -98,6 +98,7 @@ class StrataPluginTest {
         assertTrue(app.contains("pekko://strata@demo-0.demo-cluster.shop.svc.cluster.local:25520,pekko://strata@demo-1.demo-cluster.shop.svc.cluster.local:25520\""), app);
         assertTrue(app.contains("replicas: 2") && app.contains("namespace: shop") && app.contains("/strata/health/ready"), app);
         assertTrue(app.contains("{name: STRATA_CALL_TIMEOUT, value: \"5s\"}"), app);
+        assertTrue(app.contains("{name: STRATA_SPLIT_BRAIN, value: \"lease-majority\"}"), app);
         assertTrue(app.contains("{name: STRATA_TLS, value: \"pem\"}") && app.contains("secret: {secretName: demo-tls}")
                 && app.contains("mountPath: /var/run/secrets/strata-tls"), "TLS from the Secret:\n" + app);
         assertTrue(Files.readString(dir.resolve("build/strata/k8s/postgres.yaml")).contains("postgres:"));

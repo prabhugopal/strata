@@ -43,7 +43,8 @@ class StoreContractTest {
                 "strata.store.jdbc.table", run + "_state",
                 "strata.store.jdbc.journal-table", run + "_journal",
                 "strata.store.jdbc.results-table", run + "_results",
-                "strata.store.jdbc.timers-table", run + "_timers"));
+                "strata.store.jdbc.timers-table", run + "_timers",
+                "strata.store.jdbc.leases-table", run + "_leases"));
         if (db.equals("postgres")) {
             String url = System.getenv("STRATA_TEST_POSTGRES_URL");
             Assumptions.assumeTrue(url != null && !url.isBlank(), "set STRATA_TEST_POSTGRES_URL to run against PostgreSQL");
@@ -152,6 +153,33 @@ class StoreContractTest {
             assertEquals(40, join(store.claimDue(List.of("o"), now.plusSeconds(31), 40, "node-c", now.plusSeconds(60))).size());
             assertTrue(join(store.cancelTimer("t0")));
             assertFalse(join(store.cancelTimer("t0")));
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"h2", "postgres"})
+    void aLeaseHasOneHolderUntilItsReleasedOrExpires(String db) throws Exception {
+        withStore(db, store -> {
+            var ttl = java.time.Duration.ofSeconds(2);
+            assertTrue(join(store.acquireLease("sbr", "node-a", ttl)), "free: a takes it");
+            assertFalse(join(store.acquireLease("sbr", "node-b", ttl)), "held: b can't");
+            assertTrue(join(store.acquireLease("sbr", "node-a", ttl)), "a renews it");
+            assertFalse(join(store.releaseLease("sbr", "node-b")), "b can't release a's lease");
+            assertTrue(join(store.releaseLease("sbr", "node-a")));
+            assertTrue(join(store.acquireLease("sbr", "node-b", ttl)), "released: b takes it");
+
+            // b goes silent: once its lease expires, a can take it over.
+            Thread.sleep(ttl.toMillis() + 500);
+            assertTrue(join(store.acquireLease("sbr", "node-a", ttl)), "expired: a takes it over");
+            assertFalse(join(store.acquireLease("sbr", "node-b", ttl)));
+
+            // Two nodes racing for a free lease: exactly one wins.
+            for (int round = 0; round < 10; round++) {
+                String name = "race-" + round;
+                var x = CompletableFuture.supplyAsync(() -> join(store.acquireLease(name, "x", ttl)));
+                var y = CompletableFuture.supplyAsync(() -> join(store.acquireLease(name, "y", ttl)));
+                assertTrue(x.join() ^ y.join(), "round " + round + ": exactly one holder");
+            }
         });
     }
 }

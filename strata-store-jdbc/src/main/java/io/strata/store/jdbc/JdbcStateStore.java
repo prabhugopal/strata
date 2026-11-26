@@ -33,7 +33,7 @@ import java.util.concurrent.Executor;
  * Connections come from a HikariCP pool sized by {@code strata.store.jdbc.pool}.
  */
 public final class JdbcStateStore implements StateStore {
-    private final String url, table, journal, results, timersTable;
+    private final String url, table, journal, results, timersTable, leasesTable;
     private final int maxKeyLength;
     private final com.zaxxer.hikari.HikariDataSource pool;
     private final int timeoutSeconds, maxIdLength;
@@ -54,6 +54,7 @@ public final class JdbcStateStore implements StateStore {
         this.journal = identifier(c, "journal-table");
         this.results = identifier(c, "results-table");
         this.timersTable = identifier(c, "timers-table");
+        this.leasesTable = identifier(c, "leases-table");
         this.maxKeyLength = maxKeyLength;
         this.timeoutSeconds = (int) Math.max(1, c.getDuration("statement-timeout").toSeconds());
         this.io = io;
@@ -101,6 +102,8 @@ public final class JdbcStateStore implements StateStore {
         create(timersTable, c -> "CREATE TABLE IF NOT EXISTS " + timersTable + " (timer_id VARCHAR(128) NOT NULL PRIMARY KEY, " + keyCols
                 + "command VARCHAR(256) NOT NULL, arg " + blobType(c) + ", due_at TIMESTAMP NOT NULL, "
                 + "claimed_by VARCHAR(256), claimed_until TIMESTAMP, created_at TIMESTAMP NOT NULL)");
+        create(leasesTable, c -> "CREATE TABLE IF NOT EXISTS " + leasesTable
+                + " (name VARCHAR(256) NOT NULL PRIMARY KEY, owner VARCHAR(512) NOT NULL, expires_at TIMESTAMP NOT NULL)");
     }
 
     private interface Ddl { String sql(Connection c) throws SQLException; }
@@ -350,6 +353,55 @@ public final class JdbcStateStore implements StateStore {
             ps.setBytes(5, t.arg()); ps.setTimestamp(6, Timestamp.from(t.due())); ps.setTimestamp(7, now);
             ps.executeUpdate();
         }
+    }
+
+    // ---- leases ----
+
+    /** The database's clock: leases expire by it, so nodes' clocks don't have to agree. */
+    private static Timestamp dbNow(Connection c) throws SQLException {
+        try (var st = c.createStatement(); var rs = st.executeQuery("SELECT CURRENT_TIMESTAMP")) {
+            rs.next();
+            return rs.getTimestamp(1);
+        }
+    }
+
+    @Override
+    public CompletionStage<Boolean> acquireLease(String name, String owner, java.time.Duration ttl) {
+        return async("acquire lease " + name, c -> {
+            c.setAutoCommit(false);
+            try {
+                Timestamp now = dbNow(c);
+                Timestamp until = Timestamp.from(now.toInstant().plus(ttl));
+                boolean got;
+                try (var ps = prepare(c, "UPDATE " + leasesTable + " SET owner = ?, expires_at = ? WHERE name = ? AND (owner = ? OR expires_at < ?)",
+                        owner, until, name, owner, now)) {
+                    got = ps.executeUpdate() == 1;
+                }
+                if (!got) {
+                    try (var ps = prepare(c, "INSERT INTO " + leasesTable + " (name, owner, expires_at) VALUES (?, ?, ?)", name, owner, until)) {
+                        got = ps.executeUpdate() == 1;
+                    } catch (SQLException taken) {
+                        if (!isDuplicateKey(taken)) throw taken;   // someone else holds it
+                        c.rollback();
+                        return false;
+                    }
+                }
+                c.commit();
+                return got;
+            } catch (SQLException | RuntimeException e) {
+                c.rollback();
+                throw e;
+            }
+        });
+    }
+
+    @Override
+    public CompletionStage<Boolean> releaseLease(String name, String owner) {
+        return async("release lease " + name, c -> {
+            try (var ps = prepare(c, "DELETE FROM " + leasesTable + " WHERE name = ? AND owner = ?", name, owner)) {
+                return ps.executeUpdate() == 1;
+            }
+        });
     }
 
     // ---- timers ----

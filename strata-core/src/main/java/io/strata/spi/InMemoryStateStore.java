@@ -103,6 +103,26 @@ public final class InMemoryStateStore implements StateStore {
         return CompletableFuture.completedFuture(written);
     }
 
+    // ---- leases ----
+
+    private record Held(String owner, Instant until) {}
+    private final ConcurrentHashMap<String, Held> leases = new ConcurrentHashMap<>();
+
+    @Override
+    public synchronized CompletionStage<Boolean> acquireLease(String name, String owner, java.time.Duration ttl) {
+        Instant now = Instant.now();
+        Held h = leases.get(name);
+        if (h != null && !h.owner().equals(owner) && h.until().isAfter(now)) return CompletableFuture.completedFuture(false);
+        leases.put(name, new Held(owner, now.plus(ttl)));
+        return CompletableFuture.completedFuture(true);
+    }
+
+    @Override
+    public synchronized CompletionStage<Boolean> releaseLease(String name, String owner) {
+        Held h = leases.get(name);
+        return CompletableFuture.completedFuture(h != null && h.owner().equals(owner) && leases.remove(name, h));
+    }
+
     // ---- timers ----
 
     private record Claimed(Timer timer, String by, Instant until) {}

@@ -75,7 +75,11 @@ public final class ManagementApi {
             List<String> seg = segments(path.substring(settings.basePath().length()));
             boolean get = method.equalsIgnoreCase("GET");
             // Probes for orchestrators (Kubernetes); no token, and they reveal nothing else.
-            if (get && seg.equals(List.of("health", "live"))) return done(ok(json.createObjectNode().put("status", "live")));
+            if (get && seg.equals(List.of("health", "live"))) {
+                boolean live = runtime.introspection().live();
+                ObjectNode o = json.createObjectNode().put("status", live ? "live" : "removed from its cluster: restart me");
+                return done(live ? ok(o) : new Response(503, JSON, o.toString().getBytes(StandardCharsets.UTF_8)));
+            }
             if (get && seg.equals(List.of("health", "ready"))) {
                 boolean ready = runtime.introspection().ready();
                 ObjectNode o = json.createObjectNode().put("status", ready ? "ready" : "not ready");

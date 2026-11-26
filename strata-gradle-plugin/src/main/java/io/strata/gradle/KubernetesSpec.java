@@ -38,6 +38,9 @@ public abstract class KubernetesSpec {
      */
     public abstract Property<String> getTlsSecret();
 
+    /** Split-brain strategy (strata.pekko.split-brain.strategy); lease-majority uses the shared database. */
+    public abstract Property<String> getSplitBrain();
+
     /** Extra environment variables for every node (any strata.* setting via its env var). */
     public abstract MapProperty<String, String> getEnv();
 }

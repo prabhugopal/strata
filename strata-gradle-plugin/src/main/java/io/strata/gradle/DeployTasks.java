@@ -95,6 +95,7 @@ final class DeployTasks {
         @Input public abstract Property<String> getJdbcUrl();
         @Input public abstract MapProperty<String, String> getEnv();
         @Input public abstract Property<String> getTlsSecret();
+        @Input public abstract Property<String> getSplitBrain();
         @Input public abstract Property<String> getTlsMountPath();
         /** Where the development database password is kept between builds (not under build/). */
         @Internal public abstract RegularFileProperty getPasswordFile();
@@ -109,7 +110,7 @@ final class DeployTasks {
                     getRemotingPort().get(), getServiceType().get(), getCpu().get(), getMemory().get(), getMaxRamPercentage().get(),
                     getGraceSeconds().get(), getManagementBase().get(), getPostgres().get(), getPostgresImage().get(),
                     getPostgresStorage().get(), getDatabase().get(), getUser().get(), getJdbcUrl().get(), getEnv().get(),
-                    getTlsSecret().get(), getTlsMountPath().get());
+                    getTlsSecret().get(), getTlsMountPath().get(), getSplitBrain().get());
             Path out = getOutput().get().getAsFile().toPath();
             Files.createDirectories(out);
             Files.writeString(out.resolve("app.yaml"), Manifests.app(p));
