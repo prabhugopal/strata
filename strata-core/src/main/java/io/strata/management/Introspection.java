@@ -32,7 +32,12 @@ public interface Introspection {
     default boolean live() { return true; }
 
     /** The cluster as this node sees it, and how many entities of each type each node holds. */
-    record ClusterView(String self, String leader, List<Member> members, Map<String, Map<String, Integer>> entitiesByTypeAndNode) {}
+    record ClusterView(String self, String leader, String oldest, List<Member> members, Map<String, Map<String, Integer>> entitiesByTypeAndNode,
+                       String tls, SplitBrain splitBrain) {}
 
-    record Member(String address, String status, Set<String> roles, boolean reachable) {}
+    /** {@code upNumber}: the order nodes became Up in (lowest is the oldest). */
+    record Member(String address, String status, Set<String> roles, boolean reachable, int upNumber) {}
+
+    /** How a partition is resolved, and who holds the lease now (lease-majority only; null when nobody does). */
+    record SplitBrain(String strategy, String stableAfter, String leaseName, String leaseHolder) {}
 }

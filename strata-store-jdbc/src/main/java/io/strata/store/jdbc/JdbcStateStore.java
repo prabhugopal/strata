@@ -396,6 +396,16 @@ public final class JdbcStateStore implements StateStore {
     }
 
     @Override
+    public CompletionStage<Optional<String>> leaseHolder(String name) {
+        return async("read lease " + name, c -> {
+            Timestamp now = dbNow(c);
+            try (var ps = prepare(c, "SELECT owner FROM " + leasesTable + " WHERE name = ? AND expires_at >= ?", name, now); ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? Optional.of(rs.getString(1)) : Optional.<String>empty();
+            }
+        });
+    }
+
+    @Override
     public CompletionStage<Boolean> releaseLease(String name, String owner) {
         return async("release lease " + name, c -> {
             try (var ps = prepare(c, "DELETE FROM " + leasesTable + " WHERE name = ? AND owner = ?", name, owner)) {

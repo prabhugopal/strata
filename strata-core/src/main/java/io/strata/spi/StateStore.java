@@ -59,6 +59,11 @@ public interface StateStore extends AutoCloseable {
      */
     default CompletionStage<Boolean> acquireLease(String name, String owner, java.time.Duration ttl) { return unsupported("hold leases"); }
 
+    /** Who holds lease {@code name} now (not expired), if anyone. For management tools. */
+    default CompletionStage<java.util.Optional<String>> leaseHolder(String name) {
+        return java.util.concurrent.CompletableFuture.completedFuture(java.util.Optional.empty());
+    }
+
     /** Give the lease up if {@code owner} holds it; completes with whether it did. */
     default CompletionStage<Boolean> releaseLease(String name, String owner) { return unsupported("hold leases"); }
 

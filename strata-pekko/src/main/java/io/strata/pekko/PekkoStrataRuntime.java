@@ -89,6 +89,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
             cluster.manager().tell(Join.create(cluster.selfMember().address()));
         }
         awaitUp(cluster);
+        watchMembers();
         Config timers = settings.config().getConfig("strata.timers");
         if (timers.getBoolean("enabled")) {
             long every = timers.getDuration("poll-interval").toMillis();
@@ -100,6 +101,23 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         String v = settings.config().getString("strata.durability.on-divergence");
         if (!v.equals("stall") && !v.equals("abandon")) throw new StrataException("strata.durability.on-divergence must be stall or abandon, not " + v);
         return v;
+    }
+
+    /** Membership changes go to the event feed (type "cluster", id = the node), for Stratum and strata events. */
+    private void watchMembers() {
+        var watcher = system.systemActorOf(Behaviors.<org.apache.pekko.cluster.ClusterEvent.ClusterDomainEvent>receive((ctx, e) -> {
+            switch (e) {
+                case org.apache.pekko.cluster.ClusterEvent.MemberUp up -> observability.cluster("member-up", up.member().address().toString());
+                case org.apache.pekko.cluster.ClusterEvent.UnreachableMember u -> observability.cluster("unreachable", u.member().address().toString());
+                case org.apache.pekko.cluster.ClusterEvent.ReachableMember r -> observability.cluster("reachable", r.member().address().toString());
+                case org.apache.pekko.cluster.ClusterEvent.MemberDowned d -> observability.cluster("downed", d.member().address().toString());
+                case org.apache.pekko.cluster.ClusterEvent.MemberRemoved r -> observability.cluster("removed", r.member().address().toString());
+                default -> { }
+            }
+            return Behaviors.same();
+        }), "strata-member-watcher", org.apache.pekko.actor.typed.Props.empty());
+        Cluster.get(system).subscriptions().tell(org.apache.pekko.cluster.typed.Subscribe.create(watcher,
+                org.apache.pekko.cluster.ClusterEvent.ClusterDomainEvent.class));
     }
 
     // ---- timers ----
@@ -281,7 +299,9 @@ public final class PekkoStrataRuntime implements StrataRuntime {
             state.getUnreachable().forEach(unreachable::add);
             List<Member> members = new java.util.ArrayList<>();
             state.getMembers().forEach(m -> members.add(new Member(m.address().toString(), m.status().toString(),
-                    java.util.Set.copyOf(m.getRoles()), !unreachable.contains(m))));
+                    java.util.Set.copyOf(m.getRoles()), !unreachable.contains(m), m.upNumber())));
+            String oldest = members.stream().filter(mm -> mm.status().equals("Up") || mm.status().equals("Leaving"))
+                    .min(java.util.Comparator.comparingInt(Member::upNumber)).map(Member::address).orElse(null);
             String leader = state.getLeader() == null ? null : state.getLeader().toString();
             List<Registered<?>> regs;
             synchronized (types) { regs = List.copyOf(types.values()); }
@@ -297,8 +317,15 @@ public final class PekkoStrataRuntime implements StrataRuntime {
                         byType.put(r.type().name(), perNode);
                     }).toCompletableFuture())
                     .toArray(java.util.concurrent.CompletableFuture[]::new);
-            return java.util.concurrent.CompletableFuture.allOf(asks)
-                    .thenApply(v -> new ClusterView(node, leader, members, new java.util.TreeMap<>(byType)));
+            Config sbr = settings.config().getConfig("strata.pekko.split-brain");
+            String strategy = sbr.getString("strategy");
+            String leaseName = strategy.equals("lease-majority") ? pekko.systemName() + "-pekko-sbr" : null;
+            var holder = leaseName == null ? java.util.concurrent.CompletableFuture.completedFuture(java.util.Optional.<String>empty())
+                    : store.leaseHolder(leaseName).toCompletableFuture().exceptionally(e -> java.util.Optional.empty());
+            String tls = settings.config().getString("strata.pekko.tls.mode");
+            String stableAfter = sbr.getDuration("stable-after").toSeconds() + "s";
+            return java.util.concurrent.CompletableFuture.allOf(asks).thenCombine(holder, (v, h) -> new ClusterView(node, leader, oldest, members,
+                    new java.util.TreeMap<>(byType), tls, new SplitBrain(strategy, stableAfter, leaseName, h.orElse(null))));
         }
     };
 

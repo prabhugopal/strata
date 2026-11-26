@@ -105,6 +105,13 @@ class ManagementApiTest {
 
             JsonNode cluster = get(strata, "/strata/cluster");
             assertEquals("Up", cluster.at("/members/0/status").asText());
+            assertEquals(cluster.get("self").asText(), cluster.get("oldest").asText(), "a single node is the oldest");
+            assertEquals("off", cluster.get("tls").asText());
+            assertEquals("keep-majority", cluster.at("/splitBrain/strategy").asText());
+            assertTrue(cluster.at("/splitBrain/leaseHolder").isNull());
+            var clusterEvents = new java.util.ArrayList<String>();
+            get(strata, "/strata/events?type=cluster").get("items").forEach(e -> clusterEvents.add(e.get("kind").asText()));
+            assertEquals(java.util.List.of("member-up"), clusterEvents, "membership changes are in the event feed");
             assertEquals(2, cluster.at("/entitiesByTypeAndNode/counter").elements().next().asInt());
 
             String metrics = call(strata, "GET", "/strata/metrics", null, null).body();

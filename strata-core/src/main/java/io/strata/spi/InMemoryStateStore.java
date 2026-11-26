@@ -118,6 +118,12 @@ public final class InMemoryStateStore implements StateStore {
     }
 
     @Override
+    public synchronized CompletionStage<java.util.Optional<String>> leaseHolder(String name) {
+        Held h = leases.get(name);
+        return CompletableFuture.completedFuture(h != null && h.until().isAfter(Instant.now()) ? java.util.Optional.of(h.owner()) : java.util.Optional.empty());
+    }
+
+    @Override
     public synchronized CompletionStage<Boolean> releaseLease(String name, String owner) {
         Held h = leases.get(name);
         return CompletableFuture.completedFuture(h != null && h.owner().equals(owner) && leases.remove(name, h));

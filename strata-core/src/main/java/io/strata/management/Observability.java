@@ -80,6 +80,12 @@ public final class Observability implements EntityObserver {
         metrics.observe("strata_save_duration_seconds", "Time to commit state", TYPE, List.of(type), nanos);
     }
 
+    /** A cluster membership change: type "cluster", id = the node's address. */
+    public void cluster(String kind, String nodeAddress) {
+        metrics.counter("strata_cluster_events_total", "Cluster membership changes seen by this node", List.of("kind"), List.of(kind), 1);
+        event(kind, "cluster", nodeAddress, null, null, null, null, null);
+    }
+
     @Override
     public void stalled(String type, String id, String command, String error) {
         metrics.counter("strata_stalled_total", "Interrupted commands that couldn't be resumed safely", TYPE, List.of(type), 1);
