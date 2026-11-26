@@ -20,7 +20,11 @@ its state; move items to the README's status once they're built and tested.
    microservices.
 4. **Durable calls between Strata services.** One line, with the idempotency key derived
    automatically, like entity-to-entity calls inside one app.
-5. **Projections.** Entity state into tables that can be queried ("list unpaid orders over €100").
+5. **Queries: indexed fields, then projections.** "List unpaid orders over €100" can't be asked
+   today: state is one serialized blob per row. Design (see the notes below): fields marked
+   `@Indexed` are written to real columns in the same transaction as the state, so queries
+   (`strata.query(Order.class).where(...)`) are always current; projections into separate tables
+   for reports and joins.
 6. **Observability exporters.** Optional modules: `strata-opentelemetry` (traces and metrics),
    `strata-micrometer` (Spring). Plus a setting to switch collection off, not only serving.
 
@@ -72,6 +76,24 @@ outside systems that it can't roll back, which is why item 1 matters.
 
 Avoid a global change number across all entities: per-entity order, ownership fencing and causal
 ids scale; a global one needs coordination.
+
+### Querying entities: grouping entities, indexes, projections
+
+| Need | Use |
+|---|---|
+| "This customer's orders", "this cart's items" | A grouping entity: the owner keeps the ids. Fine when the group is bounded and has one owner |
+| "Unpaid orders over €100, newest first", admin screens | `@Indexed` fields + `strata.query`, always current |
+| Reports, joins across types, analytics | A projection into its own table, or export to a warehouse |
+
+A grouping entity for a global list (one `UnpaidOrders` entity) is a hot spot: one writer for
+the whole system, state with no ceiling (written whole on every commit), and filters, sorting
+and paging written by hand. Sharding it reinvents a database index.
+
+`@Indexed` is Oracle's secondary index: Strata writes the indexed values into columns in the
+same transaction as the state, so the index is never stale. Once a command has replied, a query
+sees it, unlike event-sourced read sides (Akka, Axon) that lag. Queries go to the database, not
+to nodes. Indexed fields are declared on the class; the store creates the columns and indexes;
+changes go through state versions (`@Migrate`).
 
 ### Where Strata fits
 
