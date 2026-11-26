@@ -19,16 +19,40 @@ import java.util.concurrent.CompletionStage;
  */
 public final class RecordedEntities implements Entities {
     private final Entities runtime;
+    private final io.strata.Codec codec;
 
-    public RecordedEntities(Entities runtime) { this.runtime = runtime; }
+    public RecordedEntities(Entities runtime, io.strata.Codec codec) { this.runtime = runtime; this.codec = codec; }
+
+    /** Inside a command, timers go with its commit; their ids come from Ctx (recorded). */
+    @Override
+    public String schedule(EntityType<?> type, String id, java.time.Instant at, String command, Object arg) {
+        Invocation here = Invocation.current();
+        if (here == null) return runtime.schedule(type, id, at, command, arg);
+        if (here.readOnly()) throw new StrataException(StrataException.Kind.INVALID_ARGUMENT, "a query can't schedule (it never commits)");
+        type.command(command); // fail now, not when it's due
+        String timerId = "t-" + RuntimeCtx.INSTANCE.randomUuid();
+        here.scheduled().add(new io.strata.spi.Timer(timerId, type.name(), id, command, arg == null ? null : codec.encode(arg), at));
+        return timerId;
+    }
+
+    @Override
+    public String schedule(EntityType<?> type, String id, java.time.Duration delay, String command, Object arg) {
+        return Invocation.current() == null ? runtime.schedule(type, id, delay, command, arg)
+                : schedule(type, id, RuntimeCtx.INSTANCE.now().plus(delay), command, arg);
+    }
+
+    @Override
+    public void cancel(String timerId) {
+        Invocation here = Invocation.current();
+        if (here == null) { runtime.cancel(timerId); return; }
+        if (here.readOnly()) throw new StrataException(StrataException.Kind.INVALID_ARGUMENT, "a query can't cancel timers (it never commits)");
+        here.scheduled().removeIf(t -> t.id().equals(timerId));
+        here.cancelled().add(timerId);
+    }
 
     @Override
     public <S> EntityRef<S> ref(EntityType<S> type, String id) {
-        Invocation here = Invocation.current();
-        if (here != null && here.type().equals(type.name()) && here.id().equals(id)) {
-            throw new StrataException(StrataException.Kind.INVALID_ARGUMENT,
-                    type.name() + "/" + id + " can't call itself (it handles one command at a time, so it would wait forever)");
-        }
+        // Referring to yourself is fine (e.g. to schedule a timer on yourself); calling yourself isn't.
         return new Ref<>(runtime.ref(type, id), type.name() + "/" + id);
     }
 
@@ -56,11 +80,22 @@ public final class RecordedEntities implements Entities {
         }
 
         @Override
-        public CompletionStage<S> state() { return target.state(); }
+        public CompletionStage<S> state() {
+            Invocation here = Invocation.current();
+            if (here != null && name.equals(here.type() + "/" + here.id())) {
+                return CompletableFuture.failedFuture(new StrataException(StrataException.Kind.INVALID_ARGUMENT, name + " can't read its own state this way (it's the entity itself)"));
+            }
+            return target.state();
+        }
 
 
         @SuppressWarnings("unchecked")
         private <R> CompletionStage<R> recorded(String command, Type resultType, Send<S, R> send) {
+            Invocation here = Invocation.current();
+            if (here != null && name.equals(here.type() + "/" + here.id())) {
+                return CompletableFuture.failedFuture(new StrataException(StrataException.Kind.INVALID_ARGUMENT,
+                        name + " can't call itself (it handles one command at a time, so it would wait forever)"));
+            }
             Journal j = Journal.current();
             if (j == null) return send.send(target);
             try {

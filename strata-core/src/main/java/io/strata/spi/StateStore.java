@@ -1,5 +1,6 @@
 package io.strata.spi;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletionStage;
@@ -39,16 +40,36 @@ public interface StateStore extends AutoCloseable {
     }
 
     /**
-     * Finish an invocation in one transaction: write {@code state} (null: unchanged) if the stored
-     * revision is still {@code expectedRevision}, drop the invocation's journal, keep
-     * {@code outcome} under {@code key} (when given) and forget outcomes older than {@code keepAfter}.
-     * Completes with the revision now stored.
+     * Commit a command in one transaction (see {@link Commit}): the state is written only if the
+     * stored revision is still {@code expectedRevision}. Completes with the revision now stored.
      */
-    default CompletionStage<Long> commit(String type, String id, long expectedRevision, byte[] state,
-                                         String invocationId, String key, byte[] outcome, java.time.Instant keepAfter) {
-        if (invocationId == null && key == null && state != null) return save(type, id, expectedRevision, state);
-        if (invocationId == null && key == null) return java.util.concurrent.CompletableFuture.completedFuture(expectedRevision);
-        return unsupported("record invocations");
+    default CompletionStage<Long> commit(String type, String id, long expectedRevision, Commit c) {
+        if (c.plain()) {
+            return c.state() == null ? java.util.concurrent.CompletableFuture.completedFuture(expectedRevision) : save(type, id, expectedRevision, c.state());
+        }
+        return unsupported("record invocations, keys or timers");
+    }
+
+    // ---- timers -------------------------------------------------------------------------------
+
+    /** Add a timer now (outside any command; inside a command timers go with its commit). */
+    default CompletionStage<Void> schedule(Timer timer) { return unsupported("keep timers"); }
+
+    /** Remove a timer; completes with whether it existed. */
+    default CompletionStage<Boolean> cancelTimer(String timerId) { return unsupported("keep timers"); }
+
+    /**
+     * Claim up to {@code limit} timers of these types that are due at {@code now} and not claimed
+     * by a live claim, for {@code claimant} until {@code claimUntil}. A claim that runs out (its
+     * node died) can be taken again.
+     */
+    default CompletionStage<List<Timer>> claimDue(java.util.Collection<String> types, Instant now, int limit, String claimant, Instant claimUntil) {
+        return java.util.concurrent.CompletableFuture.completedFuture(List.of());
+    }
+
+    /** Timers of a type (and entity, when given), soonest first. */
+    default CompletionStage<List<Timer>> timers(String type, String entityId, int limit) {
+        return java.util.concurrent.CompletableFuture.completedFuture(List.of());
     }
 
     private <T> CompletionStage<T> unsupported(String what) {

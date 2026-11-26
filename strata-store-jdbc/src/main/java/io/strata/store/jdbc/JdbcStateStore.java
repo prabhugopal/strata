@@ -7,7 +7,9 @@ import io.strata.StrataSettings;
 import io.strata.spi.StaleRevisionException;
 import io.strata.spi.StateStore;
 import io.strata.spi.StateStoreProvider;
+import io.strata.spi.Commit;
 import io.strata.spi.Pending;
+import io.strata.spi.Timer;
 import io.strata.spi.StoredEntry;
 import io.strata.spi.StoredState;
 
@@ -31,7 +33,7 @@ import java.util.concurrent.Executor;
  * Connections come from a HikariCP pool sized by {@code strata.store.jdbc.pool}.
  */
 public final class JdbcStateStore implements StateStore {
-    private final String url, table, journal, results;
+    private final String url, table, journal, results, timersTable;
     private final int maxKeyLength;
     private final com.zaxxer.hikari.HikariDataSource pool;
     private final int timeoutSeconds, maxIdLength;
@@ -51,6 +53,7 @@ public final class JdbcStateStore implements StateStore {
         this.table = identifier(c, "table");
         this.journal = identifier(c, "journal-table");
         this.results = identifier(c, "results-table");
+        this.timersTable = identifier(c, "timers-table");
         this.maxKeyLength = maxKeyLength;
         this.timeoutSeconds = (int) Math.max(1, c.getDuration("statement-timeout").toSeconds());
         this.io = io;
@@ -95,6 +98,9 @@ public final class JdbcStateStore implements StateStore {
         create(results, c -> "CREATE TABLE IF NOT EXISTS " + results + " (" + keyCols
                 + "idem_key VARCHAR(" + maxKeyLength + ") NOT NULL, outcome " + blobType(c) + " NOT NULL, completed_at TIMESTAMP NOT NULL, "
                 + "PRIMARY KEY (entity_type, entity_id, idem_key))");
+        create(timersTable, c -> "CREATE TABLE IF NOT EXISTS " + timersTable + " (timer_id VARCHAR(128) NOT NULL PRIMARY KEY, " + keyCols
+                + "command VARCHAR(256) NOT NULL, arg " + blobType(c) + ", due_at TIMESTAMP NOT NULL, "
+                + "claimed_by VARCHAR(256), claimed_until TIMESTAMP, created_at TIMESTAMP NOT NULL)");
     }
 
     private interface Ddl { String sql(Connection c) throws SQLException; }
@@ -276,18 +282,19 @@ public final class JdbcStateStore implements StateStore {
     }
 
     @Override
-    public CompletionStage<Long> commit(String type, String id, long expectedRevision, byte[] state,
-                                        String invocationId, String key, byte[] outcome, Instant keepAfter) {
-        if (invocationId == null && key == null && state != null) return save(type, id, expectedRevision, state);
+    public CompletionStage<Long> commit(String type, String id, long expectedRevision, Commit cm) {
+        if (cm.plain()) {
+            return cm.state() == null ? CompletableFuture.completedFuture(expectedRevision) : save(type, id, expectedRevision, cm.state());
+        }
         return async("commit " + type + "/" + id, c -> {
             Timestamp now = Timestamp.from(Instant.now());
             c.setAutoCommit(false);
             try {
                 long written = expectedRevision;
-                if (state != null) {
+                if (cm.state() != null) {
                     int rows;
                     if (expectedRevision == 0) {
-                        try (var ps = prepare(c, "INSERT INTO " + table + " (entity_type, entity_id, revision, state, updated_at) VALUES (?, ?, 1, ?, ?)", type, id, state, now)) {
+                        try (var ps = prepare(c, "INSERT INTO " + table + " (entity_type, entity_id, revision, state, updated_at) VALUES (?, ?, 1, ?, ?)", type, id, cm.state(), now)) {
                             rows = ps.executeUpdate();
                         } catch (SQLException dup) {
                             if (isDuplicateKey(dup)) throw new StaleRevisionException(type, id, expectedRevision);
@@ -295,33 +302,110 @@ public final class JdbcStateStore implements StateStore {
                         }
                     } else {
                         try (var ps = prepare(c, "UPDATE " + table + " SET revision = revision + 1, state = ?, updated_at = ? WHERE entity_type = ? AND entity_id = ? AND revision = ?",
-                                state, now, type, id, expectedRevision)) {
+                                cm.state(), now, type, id, expectedRevision)) {
                             rows = ps.executeUpdate();
                         }
                     }
                     if (rows != 1) throw new StaleRevisionException(type, id, expectedRevision);
                     written = expectedRevision + 1;
+                } else if (expectedRevision > 0) {
+                    // No new state, but still fence: only the current owner may commit.
+                    try (var ps = prepare(c, "SELECT revision FROM " + table + " WHERE entity_type = ? AND entity_id = ?", type, id);
+                         ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next() || rs.getLong(1) != expectedRevision) throw new StaleRevisionException(type, id, expectedRevision);
+                    }
                 }
-                if (invocationId != null) {
-                    try (var ps = prepare(c, "DELETE FROM " + journal + " WHERE entity_type = ? AND entity_id = ? AND invocation_id = ?", type, id, invocationId)) {
+                if (cm.invocationId() != null) {
+                    try (var ps = prepare(c, "DELETE FROM " + journal + " WHERE entity_type = ? AND entity_id = ? AND invocation_id = ?", type, id, cm.invocationId())) {
                         ps.executeUpdate();
                     }
                 }
-                if (key != null) {
-                    try (var ps = prepare(c, "INSERT INTO " + results + " (entity_type, entity_id, idem_key, outcome, completed_at) VALUES (?, ?, ?, ?, ?)", type, id, key, outcome, now)) {
+                if (cm.key() != null) {
+                    try (var ps = prepare(c, "INSERT INTO " + results + " (entity_type, entity_id, idem_key, outcome, completed_at) VALUES (?, ?, ?, ?, ?)", type, id, cm.key(), cm.outcome(), now)) {
                         ps.executeUpdate();
                     }
                 }
-                if (keepAfter != null) {
-                    try (var ps = prepare(c, "DELETE FROM " + results + " WHERE entity_type = ? AND entity_id = ? AND completed_at < ?", type, id, Timestamp.from(keepAfter))) {
+                if (cm.keepAfter() != null && cm.key() != null) {
+                    try (var ps = prepare(c, "DELETE FROM " + results + " WHERE entity_type = ? AND entity_id = ? AND completed_at < ?", type, id, Timestamp.from(cm.keepAfter()))) {
                         ps.executeUpdate();
                     }
+                }
+                for (Timer t : cm.schedule()) insertTimer(c, t, now);
+                for (String tid : cm.cancel()) {
+                    try (var ps = prepare(c, "DELETE FROM " + timersTable + " WHERE timer_id = ?", tid)) { ps.executeUpdate(); }
                 }
                 c.commit();
                 return written;
             } catch (SQLException | RuntimeException e) {
                 c.rollback();
                 throw e;
+            }
+        });
+    }
+
+    private void insertTimer(Connection c, Timer t, Timestamp now) throws SQLException {
+        try (var ps = c.prepareStatement("INSERT INTO " + timersTable + " (timer_id, entity_type, entity_id, command, arg, due_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")) {
+            ps.setQueryTimeout(timeoutSeconds);
+            ps.setString(1, t.id()); ps.setString(2, t.type()); ps.setString(3, t.entityId()); ps.setString(4, t.command());
+            ps.setBytes(5, t.arg()); ps.setTimestamp(6, Timestamp.from(t.due())); ps.setTimestamp(7, now);
+            ps.executeUpdate();
+        }
+    }
+
+    // ---- timers ----
+
+    @Override
+    public CompletionStage<Void> schedule(Timer timer) {
+        return async("schedule a timer for " + timer.type() + "/" + timer.entityId(), c -> {
+            insertTimer(c, timer, Timestamp.from(Instant.now()));
+            return null;
+        });
+    }
+
+    @Override
+    public CompletionStage<Boolean> cancelTimer(String timerId) {
+        return async("cancel timer " + timerId, c -> {
+            try (var ps = prepare(c, "DELETE FROM " + timersTable + " WHERE timer_id = ?", timerId)) { return ps.executeUpdate() == 1; }
+        });
+    }
+
+    @Override
+    public CompletionStage<List<Timer>> claimDue(java.util.Collection<String> types, Instant now, int limit, String claimant, Instant claimUntil) {
+        if (types.isEmpty()) return CompletableFuture.completedFuture(List.of());
+        return async("claim due timers", c -> {
+            Timestamp at = Timestamp.from(now);
+            String in = String.join(", ", java.util.Collections.nCopies(types.size(), "?"));
+            List<Timer> due = new ArrayList<>();
+            Object[] args = new Object[types.size() + 2];
+            args[0] = at; args[1] = at;
+            int i = 2;
+            for (String t : types) args[i++] = t;
+            try (var ps = prepare(c, "SELECT timer_id, entity_type, entity_id, command, arg, due_at FROM " + timersTable
+                    + " WHERE due_at <= ? AND (claimed_until IS NULL OR claimed_until < ?) AND entity_type IN (" + in + ") ORDER BY due_at FETCH FIRST " + Math.max(1, limit) + " ROWS ONLY", args);
+                 ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) due.add(new Timer(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getBytes(5), rs.getTimestamp(6).toInstant()));
+            }
+            List<Timer> claimed = new ArrayList<>();
+            for (Timer t : due) {
+                // Another node may claim the same timer at once: only one UPDATE wins.
+                try (var ps = prepare(c, "UPDATE " + timersTable + " SET claimed_by = ?, claimed_until = ? WHERE timer_id = ? AND (claimed_until IS NULL OR claimed_until < ?)",
+                        claimant, Timestamp.from(claimUntil), t.id(), at)) {
+                    if (ps.executeUpdate() == 1) claimed.add(t);
+                }
+            }
+            return claimed;
+        });
+    }
+
+    @Override
+    public CompletionStage<List<Timer>> timers(String type, String entityId, int limit) {
+        return async("list timers", c -> {
+            String sql = "SELECT timer_id, entity_type, entity_id, command, arg, due_at FROM " + timersTable + " WHERE entity_type = ?"
+                    + (entityId == null ? "" : " AND entity_id = ?") + " ORDER BY due_at FETCH FIRST " + Math.max(1, limit) + " ROWS ONLY";
+            try (var ps = entityId == null ? prepare(c, sql, type) : prepare(c, sql, type, entityId); ResultSet rs = ps.executeQuery()) {
+                List<Timer> out = new ArrayList<>();
+                while (rs.next()) out.add(new Timer(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getBytes(5), rs.getTimestamp(6).toInstant()));
+                return out;
             }
         });
     }

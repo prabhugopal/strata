@@ -14,7 +14,9 @@ import io.strata.durability.Journal;
 import io.strata.durability.JournalWriteException;
 import io.strata.management.EntityObserver;
 import io.strata.pekko.Protocol.*;
+import io.strata.spi.Commit;
 import io.strata.spi.Pending;
+import io.strata.spi.Timer;
 import io.strata.spi.StaleRevisionException;
 import io.strata.spi.StateStore;
 import io.strata.spi.StoredState;
@@ -162,20 +164,21 @@ final class EntityActor<S> {
         }
         if (!offThread) {
             Reply<S, Object> reply;
+            Invocation here = new Invocation(type.name(), id, null, def.readOnly());
             try {
                 S working = working();
-                reply = new Invocation(type.name(), id, null).run(() -> handle(def, working, arg));
+                reply = here.run(() -> handle(def, working, arg));
             } catch (Exception e) {
                 return failed(inv, kindOf(e), type.name() + "." + inv.command() + " failed: " + rootMessage(e), started, null);
             }
-            return completed(inv, def, reply, null, started);
+            return completed(inv, def, reply, null, started, here);
         }
         if (def.readOnly() || !persistent) {
             S working = working();
-            Invocation here = new Invocation(type.name(), id, null);
+            Invocation here = new Invocation(type.name(), id, null, def.readOnly());
             return await(CompletableFuture.supplyAsync(() -> unchecked(() -> here.run(() -> handle(def, working, arg))), deps.executor()), (reply, err) -> err != null
                     ? failed(inv, kindOf(err), type.name() + "." + inv.command() + " failed: " + rootMessage(err), started, null)
-                    : completed(inv, def, reply, null, started));
+                    : completed(inv, def, reply, null, started, here));
         }
         // A command of an entity with services: record that it's starting, then run it.
         String invocationId = UUID.randomUUID().toString();
@@ -200,11 +203,12 @@ final class EntityActor<S> {
         ClassLoader loader = type.stateType().getClassLoader();
         Journal journal = new Journal(invocationId, recorded, (seq, entry) ->
                 deps.store().record(type.name(), id, invocationId, seq, entry).toCompletableFuture().join(), deps.codec());
+        Invocation here = new Invocation(type.name(), id, journal, def.readOnly());
         return await(CompletableFuture.supplyAsync(() -> {
             Thread.currentThread().setContextClassLoader(loader);
-            return unchecked(() -> new Invocation(type.name(), id, journal).run(() -> handle(def, working, arg)));
+            return unchecked(() -> here.run(() -> handle(def, working, arg)));
         }, deps.executor()), (reply, err) -> {
-            if (err == null) return completed(inv, def, reply, invocationId, started);
+            if (err == null) return completed(inv, def, reply, invocationId, started, here);
             Throwable cause = unwrap(err);
             if (cause instanceof JournalWriteException) {
                 // Not recorded, so it may not be over: stop; it resumes when the entity next loads.
@@ -217,15 +221,27 @@ final class EntityActor<S> {
 
     // ---- finishing --------------------------------------------------------------------------------
 
-    private Behavior<Msg> completed(Invoke inv, EntityType.CommandDef<S> def, Reply<S, Object> reply, String invocationId, long started) {
+    private Behavior<Msg> completed(Invoke inv, EntityType.CommandDef<S> def, Reply<S, Object> reply, String invocationId, long started, Invocation here) {
         byte[] result = deps.codec().encode(reply.result());
+        List<Timer> schedule = here == null ? List.of() : here.scheduled();
+        List<String> cancel = here == null ? List.of() : here.cancelled();
         if (!persistent) {
             if (reply.changed()) state = reply.state();
             deps.observer().command(type.name(), id, inv.command(), def.readOnly(), null, null, null, System.nanoTime() - started);
-            tell(inv, Result.ok(result));
-            return unstashReady();
+            if (schedule.isEmpty() && cancel.isEmpty()) {
+                tell(inv, Result.ok(result));
+                return unstashReady();
+            }
+            // No commit for ephemeral entities: their timers are written after the command.
+            CompletableFuture<?>[] writes = java.util.stream.Stream.concat(
+                    schedule.stream().map(t -> deps.store().schedule(t).toCompletableFuture()),
+                    cancel.stream().map(c -> deps.store().cancelTimer(c).toCompletableFuture())).toArray(CompletableFuture[]::new);
+            return await(CompletableFuture.allOf(writes), (v, err) -> {
+                tell(inv, err == null ? Result.ok(result) : Result.failed(Kind.UNAVAILABLE, "Couldn't keep timers: " + rootMessage(err)));
+                return unstashReady();
+            });
         }
-        if (!reply.changed() && invocationId == null && inv.key() == null) {
+        if (!reply.changed() && invocationId == null && inv.key() == null && schedule.isEmpty() && cancel.isEmpty()) {
             deps.observer().command(type.name(), id, inv.command(), def.readOnly(), null, null, null, System.nanoTime() - started);
             tell(inv, Result.ok(result));
             return unstashReady();
@@ -233,7 +249,7 @@ final class EntityActor<S> {
         byte[] newState = reply.changed() ? deps.codec().encode(reply.state()) : null;
         byte[] outcome = inv.key() == null ? null : okOutcome(result);
         long commitStarted = System.nanoTime();
-        return await(deps.store().commit(type.name(), id, revision, newState, invocationId, inv.key(), outcome, keepAfter()), (rev, err) -> {
+        return await(deps.store().commit(type.name(), id, revision, new Commit(newState, invocationId, inv.key(), outcome, keepAfter(), schedule, cancel)), (rev, err) -> {
             long now = System.nanoTime();
             if (err == null) {
                 if (newState != null) {
@@ -269,8 +285,8 @@ final class EntityActor<S> {
         deps.observer().command(type.name(), id, inv.command(), false, kind, msg, null, System.nanoTime() - started);
         boolean keep = inv.key() != null && kind == Kind.FAILED;
         if (persistent && (invocationId != null || keep)) {
-            return await(deps.store().commit(type.name(), id, revision, null, invocationId, keep ? inv.key() : null,
-                    keep ? errorOutcome(kind, msg) : null, keepAfter()), (rev, err) -> {
+            return await(deps.store().commit(type.name(), id, revision, new Commit(null, invocationId, keep ? inv.key() : null,
+                    keep ? errorOutcome(kind, msg) : null, keepAfter(), List.of(), List.of())), (rev, err) -> {
                 tell(inv, Result.failed(kind, msg));
                 return err == null ? unstashReady() : stop();
             });

@@ -73,34 +73,66 @@ public final class InMemoryStateStore implements StateStore {
     }
 
     @Override
-    public CompletionStage<Long> commit(String type, String id, long expectedRevision, byte[] state,
-                                        String invocationId, String key, byte[] outcome, Instant keepAfter) {
-        // Plain commands take the lock-free path; only invocations and keys need the store's lock.
-        if (invocationId == null && key == null) {
-            return state == null ? CompletableFuture.completedFuture(expectedRevision) : save(type, id, expectedRevision, state);
+    public CompletionStage<Long> commit(String type, String id, long expectedRevision, Commit c) {
+        // Plain commands take the lock-free path; only invocations, keys and timers need the lock.
+        if (c.plain()) {
+            return c.state() == null ? CompletableFuture.completedFuture(expectedRevision) : save(type, id, expectedRevision, c.state());
         }
-        return commitLocked(type, id, expectedRevision, state, invocationId, key, outcome, keepAfter);
+        return commitLocked(type, id, expectedRevision, c);
     }
 
-    private synchronized CompletionStage<Long> commitLocked(String type, String id, long expectedRevision, byte[] state,
-                                                           String invocationId, String key, byte[] outcome, Instant keepAfter) {
+    private synchronized CompletionStage<Long> commitLocked(String type, String id, long expectedRevision, Commit c) {
         String k = type + "/" + id;
         StoredState current = data.get(k);
         long rev = current == null ? 0 : current.revision();
         if (rev != expectedRevision) return CompletableFuture.failedFuture(new StaleRevisionException(type, id, expectedRevision));
-        if (invocationId != null) {
+        if (c.invocationId() != null) {
             Journal j = journals.get(k);
-            if (j != null && j.invocationId().equals(invocationId)) journals.remove(k);
+            if (j != null && j.invocationId().equals(c.invocationId())) journals.remove(k);
         }
         long written = rev;
-        if (state != null) {
+        if (c.state() != null) {
             written = rev + 1;
-            data.put(k, new StoredState(written, state.clone()));
+            data.put(k, new StoredState(written, c.state().clone()));
             updated.put(k, Instant.now());
         }
-        if (key != null) outcomes.put(k + "\0" + key, new Outcome(outcome.clone(), Instant.now()));
-        if (keepAfter != null) outcomes.entrySet().removeIf(e -> e.getKey().startsWith(k + "\0") && e.getValue().at().isBefore(keepAfter));
+        if (c.key() != null) outcomes.put(k + "\0" + c.key(), new Outcome(c.outcome().clone(), Instant.now()));
+        if (c.keepAfter() != null) outcomes.entrySet().removeIf(e -> e.getKey().startsWith(k + "\0") && e.getValue().at().isBefore(c.keepAfter()));
+        for (Timer t : c.schedule()) timers.put(t.id(), new Claimed(t, null, null));
+        for (String tid : c.cancel()) timers.remove(tid);
         return CompletableFuture.completedFuture(written);
+    }
+
+    // ---- timers ----
+
+    private record Claimed(Timer timer, String by, Instant until) {}
+    private final ConcurrentHashMap<String, Claimed> timers = new ConcurrentHashMap<>();
+
+    @Override
+    public synchronized CompletionStage<Void> schedule(Timer timer) {
+        timers.put(timer.id(), new Claimed(timer, null, null));
+        return CompletableFuture.completedFuture(null);
+    }
+
+    @Override
+    public synchronized CompletionStage<Boolean> cancelTimer(String timerId) {
+        return CompletableFuture.completedFuture(timers.remove(timerId) != null);
+    }
+
+    @Override
+    public synchronized CompletionStage<List<Timer>> claimDue(java.util.Collection<String> types, Instant now, int limit, String claimant, Instant claimUntil) {
+        List<Timer> out = timers.values().stream()
+                .filter(c -> types.contains(c.timer().type()) && !c.timer().due().isAfter(now) && (c.until() == null || c.until().isBefore(now)))
+                .map(Claimed::timer).sorted(java.util.Comparator.comparing(Timer::due)).limit(limit).toList();
+        for (Timer t : out) timers.put(t.id(), new Claimed(t, claimant, claimUntil));
+        return CompletableFuture.completedFuture(out);
+    }
+
+    @Override
+    public CompletionStage<List<Timer>> timers(String type, String entityId, int limit) {
+        return CompletableFuture.completedFuture(timers.values().stream().map(Claimed::timer)
+                .filter(t -> t.type().equals(type) && (entityId == null || t.entityId().equals(entityId)))
+                .sorted(java.util.Comparator.comparing(Timer::due)).limit(limit).toList());
     }
 
     @Override

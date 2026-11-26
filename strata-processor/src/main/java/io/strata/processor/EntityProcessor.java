@@ -57,7 +57,7 @@ public final class EntityProcessor extends AbstractProcessor {
     static final String DEFAULT_CLIENT_SUFFIX = "Client";
     private static final String PROVIDERS = "META-INF/services/io.strata.spi.EntityTypeProvider";
     /** Names the generated client uses for itself; entity methods can't take them. */
-    private static final Set<String> CLIENT_RESERVED = Set.of("of", "entityId", "snapshot", "withIdempotencyKey", "blocking");
+    private static final Set<String> CLIENT_RESERVED = Set.of("of", "entityId", "snapshot", "withIdempotencyKey", "blocking", "later", "at");
 
     private final Set<String> providers = new TreeSet<>();
 
@@ -331,15 +331,16 @@ public final class EntityProcessor extends AbstractProcessor {
         b.append("/** Typed calls to {@link ").append(s).append("} entities. */\n")
          .append("@javax.annotation.processing.Generated(\"").append(EntityProcessor.class.getName()).append("\")\n")
          .append("public final class ").append(m.clientClass()).append(" {\n")
+         .append("    private final io.strata.Entities entities;\n")
          .append("    private final ").append(ref).append(" ref;\n\n")
-         .append("    private ").append(m.clientClass()).append("(").append(ref).append(" ref) { this.ref = ref; }\n\n")
+         .append("    private ").append(m.clientClass()).append("(io.strata.Entities entities, ").append(ref).append(" ref) { this.entities = entities; this.ref = ref; }\n\n")
          .append("    /** The entity with this id (created on first use), from a runtime or, inside an entity, from its injected Entities. */\n")
          .append("    public static ").append(m.clientClass()).append(" of(io.strata.Entities entities, String id) {\n")
-         .append("        return new ").append(m.clientClass()).append("(entities.ref(").append(m.entityClass()).append(".TYPE, id));\n")
+         .append("        return new ").append(m.clientClass()).append("(entities, entities.ref(").append(m.entityClass()).append(".TYPE, id));\n")
          .append("    }\n\n")
          .append("    public String entityId() { return ref.id(); }\n\n")
          .append("    /** The same entity; a repeated call with the same key gets the first call's outcome instead of running again. */\n")
-         .append("    public ").append(m.clientClass()).append(" withIdempotencyKey(String key) { return new ").append(m.clientClass()).append("(ref.withIdempotencyKey(key)); }\n\n")
+         .append("    public ").append(m.clientClass()).append(" withIdempotencyKey(String key) { return new ").append(m.clientClass()).append("(entities, ref.withIdempotencyKey(key)); }\n\n")
          .append("    /** The entity's whole current state. */\n")
          .append("    public java.util.concurrent.CompletionStage<").append(s).append("> snapshot() { return ref.state(); }\n");
         for (Op op : m.ops()) {
@@ -371,6 +372,29 @@ public final class EntityProcessor extends AbstractProcessor {
             }
             b.append(") {\n            ").append(isVoid ? "" : "return ").append("io.strata.Await.result(").append(m.clientClass()).append(".this.")
              .append(op.method().getSimpleName()).append("(").append(String.join(", ", op.params().stream().map(Param::name).toList())).append("));\n        }\n");
+        }
+        b.append("    }\n");
+        // Scheduled calls: durable timers that run a command later (exactly once). Each returns the timer's id.
+        b.append("\n    /** Run a command after {@code delay} (a durable timer); returns the timer's id, for Entities.cancel. */\n")
+         .append("    public Scheduled later(java.time.Duration delay) { return new Scheduled(delay, null); }\n\n")
+         .append("    /** Run a command at {@code time} (a durable timer); returns the timer's id, for Entities.cancel. */\n")
+         .append("    public Scheduled at(java.time.Instant time) { return new Scheduled(null, time); }\n\n")
+         .append("    public final class Scheduled {\n")
+         .append("        private final java.time.Duration delay;\n        private final java.time.Instant time;\n")
+         .append("        private Scheduled(java.time.Duration delay, java.time.Instant time) { this.delay = delay; this.time = time; }\n");
+        for (Op op : m.ops()) {
+            if (op.query()) continue;
+            b.append("\n        public String ").append(op.method().getSimpleName()).append("(");
+            for (int i = 0; i < op.params().size(); i++) {
+                Param p = op.params().get(i);
+                b.append(i == 0 ? "" : ", ").append(p.type()).append(' ').append(p.name());
+            }
+            String arg = op.params().isEmpty() ? "null"
+                    : op.wrapsArgs() ? "new " + m.entityClass() + "." + op.argsRecord() + "(" + String.join(", ", op.params().stream().map(Param::name).toList()) + ")"
+                    : op.params().getFirst().name();
+            b.append(") {\n            return time != null\n")
+             .append("                    ? entities.schedule(").append(m.entityClass()).append(".TYPE, ref.id(), time, ").append(literal(op.command())).append(", ").append(arg).append(")\n")
+             .append("                    : entities.schedule(").append(m.entityClass()).append(".TYPE, ref.id(), delay, ").append(literal(op.command())).append(", ").append(arg).append(");\n        }\n");
         }
         b.append("    }\n");
         return b.append("}\n").toString();

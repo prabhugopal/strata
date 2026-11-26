@@ -26,5 +26,5 @@ public class Stamp {
     }
 
     @Query
-    public Instant at() { return at; }
+    public Instant stampedAt() { return at; }
 }

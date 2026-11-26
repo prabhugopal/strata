@@ -2,6 +2,7 @@ package io.strata.pekko;
 
 import io.strata.Codec;
 import io.strata.EntityRef;
+import com.typesafe.config.Config;
 import io.strata.Ctx;
 import io.strata.Durability;
 import io.strata.Entities;
@@ -81,6 +82,82 @@ public final class PekkoStrataRuntime implements StrataRuntime {
             cluster.manager().tell(Join.create(cluster.selfMember().address()));
         }
         awaitUp(cluster);
+        Config timers = settings.config().getConfig("strata.timers");
+        if (timers.getBoolean("enabled")) {
+            long every = timers.getDuration("poll-interval").toMillis();
+            timerTicks.scheduleWithFixedDelay(this::pollTimers, every, every, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    // ---- timers ----
+
+    private final java.util.concurrent.ScheduledExecutorService timerTicks = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "strata-timers");
+        t.setDaemon(true);
+        return t;
+    });
+    private final java.util.concurrent.atomic.AtomicBoolean polling = new java.util.concurrent.atomic.AtomicBoolean();
+
+    /** Claim due timers of the types this node runs and deliver them, each with its own idempotency key. */
+    private void pollTimers() {
+        if (!polling.compareAndSet(false, true)) return;
+        try {
+            List<String> names;
+            synchronized (types) { names = List.copyOf(types.keySet()); }
+            if (names.isEmpty()) return;
+            Config c = settings.config().getConfig("strata.timers");
+            java.time.Instant now = java.time.Instant.now();
+            var due = store.claimDue(names, now, c.getInt("batch"), node, now.plus(c.getDuration("claim-for")))
+                    .toCompletableFuture().get(settings.callTimeout().toMillis(), TimeUnit.MILLISECONDS);
+            for (var t : due) deliver(t);
+        } catch (Exception e) {
+            system.log().warn("Couldn't poll timers: {}", e.toString());
+        } finally {
+            polling.set(false);
+        }
+    }
+
+    private void deliver(io.strata.spi.Timer t) {
+        Registered<?> r;
+        synchronized (types) { r = types.get(t.type()); }
+        if (r == null) return;
+        ref(r.type(), t.entityId()).withIdempotencyKey("timer/" + t.id()).callJson(t.command(), t.arg()).whenComplete((res, err) -> {
+            Kind kind = err == null ? null : err instanceof StrataException se ? se.kind()
+                    : err.getCause() instanceof StrataException se2 ? se2.kind() : Kind.UNAVAILABLE;
+            if (kind == null || kind == Kind.FAILED || kind == Kind.INVALID_ARGUMENT || kind == Kind.NOT_FOUND) {
+                // Delivered (a failure is the command's answer, kept under the key): the timer is done.
+                if (kind != null) system.log().warn("Timer {} on {}/{}: {} failed: {}", t.id(), t.type(), t.entityId(), t.command(), err.getMessage());
+                store.cancelTimer(t.id());
+            } else {
+                system.log().info("Timer {} on {}/{} will be retried: {}", t.id(), t.type(), t.entityId(), err.getMessage());
+            }
+        });
+    }
+
+    @Override
+    public String schedule(EntityType<?> type, String id, java.time.Instant at, String command, Object arg) {
+        type.command(command);
+        String timerId = "t-" + java.util.UUID.randomUUID();
+        join(store.schedule(new io.strata.spi.Timer(timerId, type.name(), id, command, arg == null ? null : codec.encode(arg), at)));
+        return timerId;
+    }
+
+    @Override
+    public String schedule(EntityType<?> type, String id, java.time.Duration delay, String command, Object arg) {
+        return schedule(type, id, java.time.Instant.now().plus(delay), command, arg);
+    }
+
+    @Override
+    public void cancel(String timerId) {
+        join(store.cancelTimer(timerId));
+    }
+
+    private <T> T join(CompletionStage<T> s) {
+        try {
+            return s.toCompletableFuture().get(settings.callTimeout().toMillis(), TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            throw new StrataException(Kind.UNAVAILABLE, "Timer store: " + e.getMessage(), e);
+        }
     }
 
     private void awaitUp(Cluster cluster) {
@@ -113,7 +190,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
                 requested.add(cls);
                 // Strata's own: they record themselves (and only inside recorded invocations).
                 if (cls == Ctx.class) return java.util.Optional.of(cls.cast(RuntimeCtx.INSTANCE));
-                if (cls == Entities.class) return java.util.Optional.of(cls.cast(new RecordedEntities(PekkoStrataRuntime.this)));
+                if (cls == Entities.class) return java.util.Optional.of(cls.cast(new RecordedEntities(PekkoStrataRuntime.this, codec)));
                 return services.find(cls, name).map(svc -> {
                     if (!recorded) return svc;
                     if (cls.isInterface()) return Recording.wrap(cls, svc);
@@ -212,6 +289,7 @@ public final class PekkoStrataRuntime implements StrataRuntime {
 
     @Override
     public void close() {
+        timerTicks.shutdownNow();
         for (AutoCloseable r; (r = closeWith.poll()) != null; ) {
             try { r.close(); } catch (Exception e) { system.log().warn("Couldn't close {}", r, e); }
         }

@@ -156,7 +156,7 @@ class DurableInvocationTest {
         try (StrataRuntime s = start(mails::add)) {
             java.time.Instant before = java.time.Instant.now();
             assertEquals("stamp/s1", await(StampClient.of(s, "s1").stamp()));
-            assertFalse(await(StampClient.of(s, "s1").at()).isBefore(before));
+            assertFalse(await(StampClient.of(s, "s1").stampedAt()).isBefore(before));
 
             var self = assertThrows(ExecutionException.class, () -> await(TransferClient.of(s, "t9").askMyself()));
             assertTrue(self.getCause().getMessage().contains("can't call itself"), self.getCause().getMessage());
