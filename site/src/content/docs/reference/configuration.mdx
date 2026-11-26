@@ -20,7 +20,7 @@ Runtime, entities, HTTP, management, durability, timers, the seal.
 | `strata.shutdown-hook` | `true` |  | Strata.run / StrataMain stop the node gracefully when the process is told to stop. |
 | `strata.call-timeout` | `10s` |  | How long a caller waits for an entity to answer a command. |
 | `strata.entity.default-durability` | `"persistent"` |  | ephemeral \| persistent. Persistent entities commit state before replying. |
-| `strata.entity.passivate-after` | `2m` |  | Stop idle entities after this long; they reload from the store on next use. |
+| `strata.entity.passivate-after` | `2m` | `STRATA_PASSIVATE_AFTER` | Unload entities idle this long from memory; their state is in the store and the next request loads them again. The only idle setting: Pekko's own idle passivation is switched off. |
 | `strata.entity.max-id-length` | `1024` |  | Longest entity id accepted (characters). Stores size their id columns from this. |
 | `strata.entity.discover` | `true` |  | Register every entity type found on the classpath at start (classes annotated @Entity, through the provider strata-processor generates). Off: register types yourself. |
 | `strata.entity.classes` | `[]` |  | Entity classes to register at start, by name: @Entity classes compiled without strata-processor (e.g. Scala) are built by reflection; EntityTypeProvider classes are created. |
@@ -67,7 +67,6 @@ The Pekko runtime: clustering.
 | `strata.pekko.seed-nodes` | `""` | `STRATA_SEED_NODES` | With cluster-mode = seed-nodes: the seed node addresses, comma-separated, e.g. "pekko://strata@app-0.app-cluster:25520,pekko://strata@app-1.app-cluster:25520". Empty keeps strata.pekko.system.pekko.cluster.seed-nodes as configured. |
 | `strata.pekko.startup-timeout` | `30s` |  | How long start() waits for this node to become a cluster member. |
 | `strata.pekko.startup-poll-interval` | `20ms` |  | How often start() checks whether the node has joined. |
-| `strata.pekko.passivation.idle-timeout` | `2m` | `STRATA_IDLE_TIMEOUT` |  |
 | `strata.pekko.split-brain.strategy` | `"keep-majority"` | `STRATA_SPLIT_BRAIN` | keep-majority  - the side with more nodes (default; an even split stops both sides) lease-majority - the side holding a lease in Strata's store; the side that can't reach the                  store couldn't commit anyway. Recommended for 2 nodes or even sizes. keep-oldest, static-quorum - see Pekko's documentation (set its settings under strata.pekko.system) |
 | `strata.pekko.split-brain.stable-after` | `20s` |  | How long the cluster must be stable (no members joining, leaving or unreachable) before deciding. |
 | `strata.pekko.split-brain.lease.heartbeat-interval` | `12s` |  | A held lease is renewed this often, for this long; a node that goes silent loses it after heartbeat-timeout. |

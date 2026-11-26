@@ -3,7 +3,7 @@ title: Strata
 description: Durable, distributed entities for the JVM, on Apache Pekko.
 template: splash
 hero:
-  tagline: Write plain Java, Kotlin, Scala or Clojure. Strata keeps it running through crashes, restarts and deploys, with every effect made exactly once.
+  tagline: Write plain Java, Kotlin, Scala or Clojure. Strata keeps it running through crashes, restarts and deploys, never repeating an effect it has recorded.
   actions:
     - text: Quick start
       link: ./start/quick-start/
@@ -40,7 +40,7 @@ public class Order {
     @Inject Ctx ctx;                             // time, randomness, identity
 
     @Command public String pay(String card) throws Declined {
-        String receipt = payments.charge(ctx.entityId(), total, card);   // made exactly once
+        String receipt = payments.charge(ctx.entityId(), total, card);   // recorded: never repeated
         status = Status.PAID;
         return receipt;
     }

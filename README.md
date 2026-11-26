@@ -4,8 +4,8 @@
 [![Docs](https://github.com/prabhugopal/strata/actions/workflows/docs.yml/badge.svg)](https://prabhugopal.github.io/strata/)
 
 **Durable, distributed entities for the JVM, on Apache Pekko.** Write plain Java, Kotlin, Scala or
-Clojure; Strata keeps it running through crashes, restarts and deploys, with every effect made
-exactly once. It's a library in your app, not a separate server.
+Clojure; Strata keeps it running through crashes, restarts and deploys, and never repeats an
+effect it has recorded. It's a library in your app, not a separate server.
 
 ```java
 @Entity(mount = "/orders/{id}", expose = true)
@@ -17,7 +17,7 @@ public class Order {
     @Inject Ctx ctx;                               // time, randomness, identity
 
     @Command public String pay(String card) throws Declined {
-        String receipt = payments.charge(ctx.entityId(), total, card);   // made exactly once
+        String receipt = payments.charge(ctx.entityId(), total, card);   // recorded: never repeated
         mailer.send("Paid, receipt " + receipt);                         // even if the node dies here
         status = Status.PAID;
         return receipt;
@@ -30,7 +30,9 @@ From that class Strata:
 - runs each order in exactly one place in a [Pekko](https://pekko.apache.org) cluster, one command
   at a time, and commits its state before every reply;
 - records every service call as it happens, so if a node dies mid-command the next node finishes
-  it, answering calls already made from the record: the card is charged once, the email sent once;
+  it, answering calls already made from the record instead of making them again. The one call in
+  flight at the moment of the crash runs again; services pass `Strata.callKey()` (the same on every
+  retry) to the provider as its idempotency key, so the card is still charged once;
 - checks at start that the class can't reach the outside world any other way (**the seal**), so
   nothing escapes the record;
 - generates the HTTP routes, a typed client and the forms Stratum shows; no main class, no wiring.

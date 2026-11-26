@@ -18,29 +18,33 @@ is added only if all of these hold:
 
 Ideas that don't pass stay under "Ideas to weigh separately", not in the plan.
 
+## Done
+
+- **`Strata.callKey()`** (2026-11-26): a service passes it to the provider as its idempotency key;
+  the same on every retry of that call, so a call in flight at a crash isn't applied twice. The
+  README's "charged once" claim corrected. (Planned as `ctx.callKey()`; it belongs to the service,
+  not the entity, so entity code doesn't change.)
+- **One idle setting** (2026-11-26): `strata.entity.passivate-after` (`STRATA_PASSIVATE_AFTER`);
+  Pekko's own idle passivation off. A duplicate `strata.pekko.passivation.idle-timeout` was added
+  and removed the same day.
+
 ## Next, in order
 
-1. **`ctx.callKey()`: exactly-once at the edge.** A service call in flight when a node dies (the
-   provider got it, the journal didn't record the result) runs again on resume, and today the
-   service has no stable key to pass on, so the provider can't tell it's a repeat. Give each call a
-   key that's the same on every replay (invocation id + call number) to pass as the provider's
-   idempotency key. Correct the README's "the card is charged once" at the same time: true for
-   recorded calls, not for the one in flight at the crash.
-2. **Entity history: archive and flashback.** Keep the journal and earlier state versions instead
+1. **Entity history: archive and flashback.** Keep the journal and earlier state versions instead
    of deleting them at commit, with a retention setting. Gives: each entity's history in Stratum,
    "what was this order at 10:42" (like Oracle's flashback query), and reverting an entity to an
    earlier version. Also: interrupt and cancel a running command.
-3. **Messaging in and out (Kafka).** Events published reliably when a command commits (outbox),
+2. **Messaging in and out (Kafka).** Events published reliably when a command commits (outbox),
    and commands driven from a topic with exactly-once processing. The biggest gap for
    microservices.
-4. **Durable calls between Strata services.** One line, with the idempotency key derived
+3. **Durable calls between Strata services.** One line, with the idempotency key derived
    automatically, like entity-to-entity calls inside one app.
-5. **Queries: indexed fields, then projections.** "List unpaid orders over €100" can't be asked
+4. **Queries: indexed fields, then projections.** "List unpaid orders over €100" can't be asked
    today: state is one serialized blob per row. Design (see the notes below): fields marked
    `@Indexed` are written to real columns in the same transaction as the state, so queries
    (`strata.query(Order.class).where(...)`) are always current; projections into separate tables
    for reports and joins.
-6. **Observability exporters.** Optional modules: `strata-opentelemetry` (traces and metrics),
+5. **Observability exporters.** Optional modules: `strata-opentelemetry` (traces and metrics),
    `strata-micrometer` (Spring). Plus a setting to switch collection off, not only serving.
 
 ## Also on the list
@@ -87,7 +91,7 @@ replays an entity's whole life, so recovery time doesn't grow with an entity's a
 state write per command.
 
 Where the analogy stops: Oracle commits atomically within the database; Strata's effects reach
-outside systems that it can't roll back, which is why item 1 matters.
+outside systems that it can't roll back, which is why `Strata.callKey()` exists.
 
 Avoid a global change number across all entities: per-entity order, ownership fencing and causal
 ids scale; a global one needs coordination.

@@ -36,7 +36,8 @@ kept for `strata.durability.result-retention`.
 ## Limits
 
 - An effect that happened but whose outcome wasn't stored yet (the node died in between) runs
-  again on resume. Every journal has this window; for payments, the provider's own idempotency
-  key closes it.
+  again on resume. Every journal has this window. The service closes it by passing
+  `Strata.callKey()` to the provider as its idempotency key: the key is the same on every retry
+  of that call (see [Services](../../guides/services/#calls-retried-after-a-crash)).
 - Only interface services are recorded. An injected class is used as is, with a warning.
 - Entities without services keep the fast inline path: no records, nothing to resume.

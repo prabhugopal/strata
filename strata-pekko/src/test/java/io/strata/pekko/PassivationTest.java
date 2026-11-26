@@ -14,30 +14,21 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+/** strata.entity.passivate-after is the one idle setting; Pekko's own idle passivation is off. */
 class PassivationTest {
-    static final String KEY = "pekko.cluster.sharding.passivation.default-idle-strategy.idle-entity.timeout";
     @TempDir Path dir;
 
-    Config config(String idle) {
+    Config config(String passivateAfter) {
         return ConfigFactory.parseString("strata.pekko.system.pekko.remote.artery.canonical.port = 0\n"
                         + "strata.store.jdbc.url = \"jdbc:h2:file:" + dir.resolve("db") + "\"\n"
-                        + "strata.pekko.passivation.idle-timeout = " + idle)
+                        + "strata.entity.passivate-after = " + passivateAfter)
                 .withFallback(ConfigFactory.load()).resolve();
     }
 
-    static Config passivation(String v) {
-        return PekkoSettings.passivation(ConfigFactory.parseMap(Map.of("idle-timeout", v)));
-    }
-
     @Test
-    void theSettingBecomesPekkosIdleTimeout() {
-        assertEquals(Duration.ofSeconds(30), passivation("30s").getDuration(KEY));
-        assertEquals("off", passivation("off").getString(KEY));
-        assertEquals(Duration.ofMinutes(2), PekkoSettings.passivation(ConfigFactory.load().getConfig("strata.pekko.passivation")).getDuration(KEY),
-                "the default stays Pekko's 2 minutes");
-        var e = assertThrows(IllegalArgumentException.class, () -> passivation("soon"));
-        assertTrue(e.getMessage().contains("strata.pekko.passivation.idle-timeout"), e.getMessage());
-        assertThrows(IllegalArgumentException.class, () -> passivation("0s"));
+    void pekkosOwnIdlePassivationIsOff() {
+        Config system = PekkoSettings.from(ConfigFactory.load()).systemConfig();
+        assertEquals("off", system.getString(PekkoSettings.IDLE_PASSIVATION));
     }
 
     static int inMemory(StrataRuntime rt) {
@@ -60,9 +51,9 @@ class PassivationTest {
     }
 
     @Test
-    void offKeepsThemLoaded() throws Exception {
+    void aLongerSettingKeepsThemLoaded() throws Exception {
         var type = PekkoRuntimeTest.counter(Durability.PERSISTENT);
-        try (StrataRuntime rt = Strata.start(config("off"))) {
+        try (StrataRuntime rt = Strata.start(config("1h"))) {
             rt.register(type);
             PekkoRuntimeTest.call(rt, type, "a", "increment", null);
             Thread.sleep(3000);

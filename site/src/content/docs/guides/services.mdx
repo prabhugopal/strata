@@ -27,3 +27,21 @@ the entity, field and type. Calls on interface services are recorded.
 
 Services may read configuration, files or the network; entities can't. Keep business rules in the
 entity and integration in the service.
+
+## Calls retried after a crash
+
+Strata records each call's result, and never repeats a recorded call. One case remains: the node
+dies after the provider got the call but before its result was recorded, so the call runs again
+when the command resumes. Pass `Strata.callKey()` to the provider as its idempotency key; it's the
+same every time that call is retried, on any node, so the provider applies it once:
+
+```java
+@Provides
+public class StripePayments implements Payments {
+    public String charge(String order, long cents, String card) {
+        return stripe.charge(cents, card, Strata.callKey().orElseThrow());   // same key on a retry
+    }
+}
+```
+
+It's empty outside a call recorded by an entity. The entity's code doesn't change.

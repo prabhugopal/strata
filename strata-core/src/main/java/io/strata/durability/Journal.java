@@ -25,6 +25,10 @@ public final class Journal {
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ThreadLocal<String> CALL_KEY = new ThreadLocal<>();
+
+    /** The key of the recorded call running on this thread ({@code <invocation>/<call number>}), or null. */
+    public static String currentCallKey() { return CALL_KEY.get(); }
 
     private final String invocationId;
     private final List<byte[]> recorded;
@@ -81,6 +85,8 @@ public final class Journal {
         ObjectNode entry = JSON.createObjectNode().put("call", name);
         Object result;
         Exception failure = null;
+        String outer = CALL_KEY.get();
+        CALL_KEY.set(invocationId + "/" + n);
         try {
             result = real.run(n);
             entry.set("ok", JSON.readTree(codec.encode(result)));
@@ -89,6 +95,8 @@ public final class Journal {
             failure = ex;
             ObjectNode err = entry.putObject("error").put("type", ex.getClass().getName()).put("message", ex.getMessage());
             if (ex instanceof StrataException se) err.put("kind", se.kind().name());
+        } finally {
+            if (outer == null) CALL_KEY.remove(); else CALL_KEY.set(outer);
         }
         try {
             writer.write(n, JSON.writeValueAsBytes(entry));

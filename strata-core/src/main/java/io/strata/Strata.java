@@ -15,6 +15,22 @@ public final class Strata {
     private Strata() {}
 
     /**
+     * For service implementations: the key of the call being made, the same every time this call
+     * is retried (after a crash, on another node). Pass it to the outside system as its idempotency
+     * key, so a call that was in flight when a node died isn't applied twice. Empty outside a call
+     * recorded by an entity.
+     *
+     * <pre>{@code
+     * public Receipt charge(String order, long cents, String card) {
+     *     return stripe.charge(cents, card, Strata.callKey().orElseThrow());
+     * }
+     * }</pre>
+     */
+    public static java.util.Optional<String> callKey() {
+        return java.util.Optional.ofNullable(io.strata.durability.Journal.currentCallKey());
+    }
+
+    /**
      * Start a node the way an app's {@code main} wants: the application's config plus any
      * {@code --some.key=value} arguments (they win), and a shutdown hook that stops the node
      * gracefully (entities finish their command and hand over) when the process is told to stop.
