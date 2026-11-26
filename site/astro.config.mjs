@@ -5,6 +5,9 @@ import svelte from '@astrojs/svelte';
 import starlightSidebarTopics from 'starlight-sidebar-topics';
 
 export default defineConfig({
+  // Where the site is published, e.g. DOCS_SITE=https://prabhugopal.github.io DOCS_BASE=/strata for GitHub Pages.
+  site: process.env.DOCS_SITE,
+  base: process.env.DOCS_BASE ?? '/',
   integrations: [
     starlight({
       title: 'Strata',
@@ -16,7 +19,7 @@ export default defineConfig({
         starlightSidebarTopics([
           {
             label: 'Learn',
-            link: '/start/introduction/',
+            link: 'start/introduction/',
             icon: 'open-book',
             items: [
               { label: 'Start here', items: ['start/introduction', 'start/quick-start', 'start/shop'] },
@@ -29,7 +32,7 @@ export default defineConfig({
           },
           {
             label: 'Guides',
-            link: '/guides/services/',
+            link: 'guides/services/',
             icon: 'puzzle',
             items: [
               { label: 'Building', items: ['guides/services', 'guides/languages', 'guides/spring'] },
@@ -38,7 +41,7 @@ export default defineConfig({
           },
           {
             label: 'Reference',
-            link: '/reference/configuration/',
+            link: 'reference/configuration/',
             icon: 'information',
             items: ['reference/configuration', 'reference/annotations', 'reference/management-api', 'reference/cli'],
           },
