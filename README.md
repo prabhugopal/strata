@@ -53,6 +53,26 @@ Each entity id lives in one place in the cluster and applies commands one at a t
 entity commits its new state before replying, so a crash (even `kill -9`) loses nothing that was
 acknowledged. Idle entities are stopped and reload on next use.
 
+## A complete example: `examples/shop`
+
+Every construct in one small app, with no `main` and no wiring code:
+
+| File | Shows |
+|---|---|
+| `Order.java` | `@Entity(mount, expose)`, `@Inject` services, `Ctx`, calling `Stock` entities (`blocking()`), compensation on failure, a durable timer (`later(…).expire()`), cancelling it |
+| `Stock.java` | A plain entity other entities call |
+| `DemoPayments`, `ConsoleMailer`, `ConfiguredPolicy` | `@Provides` services, found at start; config read by a service, not by entities |
+| `application.conf` | Shop settings and Strata settings, all overridable by env |
+| `ShopTest.java` | Place, pay, declined card, automatic expiry releasing stock, out-of-stock compensation, idempotent payment over HTTP |
+
+```sh
+./gradlew :examples:shop:run --args="--strata.store.kind=memory"
+curl -X POST localhost:8080/stock/tea/restock -d 10
+curl -X POST localhost:8080/orders/a1/place -H 'content-type: application/json' -d '[{"sku":"tea","quantity":2}]'
+curl -X POST localhost:8080/orders/a1/pay -H 'Idempotency-Key: k1' -d '"4242-4242"'
+curl localhost:8080/orders/a1/summary            # "PAID: 1 lines, 900 cents, receipt R-…"
+```
+
 ## Modules
 
 | Module | What it is |
@@ -134,7 +154,9 @@ public class Basket {
 
 Whoever hosts Strata provides them, and entity code doesn't change:
 
-- **Plain app:** `Strata.start(Services.builder().add(Pricing.class, new HttpPricing()).build())`
+- **Discovered:** mark the implementation `@Provides` (public, no-argument constructor); Strata
+  creates it at start and offers it for each interface it implements. No registration code.
+- **Plain app:** `Strata.run(Services.builder().add(Pricing.class, new HttpPricing()).build(), args)` (these win over discovered ones)
 - **Spring Boot:** they're Spring beans, by type (honouring `@Primary`) or by bean name.
 
 Spring never manages entities, and entities never become beans: Pekko owns their lifecycle,
@@ -157,6 +179,23 @@ Entity type order isn't sealed: its code reaches outside Strata, so its effects 
 `strata.seal.mode` is `enforce` (default), `warn` or `off`. Allow a library you trust with
 `strata.seal.allow += "com.acme.money.**"`. The check runs once per type at start; nothing at run
 time. Types made with the builder API (plain lambdas, Clojure's `defentity`) aren't checked.
+
+## Timers and signals
+
+A workflow is state, commands and timers. A signal from outside is just a command (`approve()`);
+a timeout is a durable timer that runs a command later:
+
+```java
+expiry = OrderClient.of(entities, ctx.entityId()).later(Duration.ofMinutes(15)).expire();  // timer id
+entities.cancel(expiry);                                                                  // e.g. on pay()
+```
+
+Inside a command, timers are written in the same commit as the state (a failed command leaves
+none). Every node polls for due timers of the types it runs (`strata.timers.poll-interval`),
+claims them in the store, and delivers each with the idempotency key `timer/<id>`: a timer fires
+once even with several nodes polling, and a claim held by a node that died expires
+(`strata.timers.claim-for`) so another node delivers it. From outside an entity:
+`strata.schedule(OrderEntity.TYPE, "o1", Duration.ofHours(1), "expire", null)`.
 
 ## Durable invocations
 
@@ -378,6 +417,9 @@ Kubernetes pod spec).
 - A node stopped between two service calls: the next node resumes the command, the first effect
   isn't repeated, a recorded exception replays, and the journal is empty afterwards. Idempotency
   keys return the first outcome (success or failure) without running again, over HTTP too.
+- Timers fire by themselves, cancelling stops them, a failed command leaves none, a timer set on a
+  stopped node fires on another, and with two nodes polling 20 timers are each delivered once.
+- The shop example end to end, in-process and as the packaged app (services discovered, no main).
 - Annotation mistakes fail compilation with a message on the offending element.
 - Bad configuration fails at startup.
 - The same API works from Java, Kotlin, Scala 3 and Clojure.

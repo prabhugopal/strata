@@ -48,7 +48,7 @@ import java.util.TreeSet;
  * <p>Options ({@code -A}): {@code strata.entitySuffix} (default {@value #DEFAULT_ENTITY_SUFFIX}),
  * {@code strata.clientSuffix} (default {@value #DEFAULT_CLIENT_SUFFIX}).
  */
-@SupportedAnnotationTypes("io.strata.annotation.Entity")
+@SupportedAnnotationTypes({"io.strata.annotation.Entity", "io.strata.annotation.Provides"})
 @SupportedOptions({EntityProcessor.ENTITY_SUFFIX_OPTION, EntityProcessor.CLIENT_SUFFIX_OPTION})
 public final class EntityProcessor extends AbstractProcessor {
     static final String ENTITY_SUFFIX_OPTION = "strata.entitySuffix";
@@ -60,6 +60,8 @@ public final class EntityProcessor extends AbstractProcessor {
     private static final Set<String> CLIENT_RESERVED = Set.of("of", "entityId", "snapshot", "withIdempotencyKey", "blocking", "later", "at");
 
     private final Set<String> providers = new TreeSet<>();
+    private final Set<String> services = new TreeSet<>();
+    private static final String SERVICES = "META-INF/strata/services";
 
     @Override
     public SourceVersion getSupportedSourceVersion() { return SourceVersion.latestSupported(); }
@@ -82,7 +84,15 @@ public final class EntityProcessor extends AbstractProcessor {
                 processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "@Entity: " + x.getMessage(), x.element);
             }
         }
+        for (Element e : round.getElementsAnnotatedWith(io.strata.annotation.Provides.class)) {
+            try {
+                services.add(service(e));
+            } catch (Invalid x) {
+                processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "@Provides: " + x.getMessage(), x.element);
+            }
+        }
         if (round.processingOver() && !providers.isEmpty()) writeProviders();
+        if (round.processingOver() && !services.isEmpty()) writeList(SERVICES, services);
         return true;
     }
 
@@ -477,6 +487,28 @@ public final class EntityProcessor extends AbstractProcessor {
             w.write(source);
         } catch (IOException e) {
             throw new Invalid(origin, "couldn't write " + qualified(pkg, cls) + ": " + e.getMessage());
+        }
+    }
+
+    /** A @Provides class must be creatable by Strata: public, concrete, public no-argument constructor. */
+    private String service(Element e) throws Invalid {
+        if (e.getKind() != ElementKind.CLASS) throw new Invalid(e, "only classes can provide services");
+        TypeElement type = (TypeElement) e;
+        if (!type.getModifiers().contains(Modifier.PUBLIC) || type.getModifiers().contains(Modifier.ABSTRACT)) {
+            throw new Invalid(e, "a service class must be public and not abstract");
+        }
+        if (type.getNestingKind() != NestingKind.TOP_LEVEL && !type.getModifiers().contains(Modifier.STATIC)) throw new Invalid(e, "a nested service class must be static");
+        boolean ctor = ElementFilter.constructorsIn(type.getEnclosedElements()).stream()
+                .anyMatch(c -> c.getParameters().isEmpty() && c.getModifiers().contains(Modifier.PUBLIC));
+        if (!ctor) throw new Invalid(e, "needs a public constructor without parameters");
+        return processingEnv.getElementUtils().getBinaryName(type).toString();
+    }
+
+    private void writeList(String resource, Set<String> lines) {
+        try (Writer w = processingEnv.getFiler().createResource(StandardLocation.CLASS_OUTPUT, "", resource).openWriter()) {
+            for (String l : lines) w.write(l + "\n");
+        } catch (IOException ex) {
+            processingEnv.getMessager().printMessage(Diagnostic.Kind.ERROR, "Couldn't write " + resource + ": " + ex.getMessage());
         }
     }
 

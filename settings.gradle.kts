@@ -19,6 +19,7 @@ include(
     "examples:counter-spring",
     "examples:counter-pekko",
     "examples:services",
+    "examples:shop",
     "examples:interop-kotlin",
     "examples:interop-scala",
     "examples:interop-clojure",

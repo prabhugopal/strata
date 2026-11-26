@@ -68,6 +68,13 @@ public final class Strata {
 
     public static StrataRuntime start(Config config, Services services) {
         StrataSettings settings = StrataSettings.from(config);
+        // Services given here win; @Provides classes (and strata.services.classes) fill the rest.
+        if (config.getBoolean("strata.services.discover") || !config.getStringList("strata.services.classes").isEmpty()) {
+            ClassLoader loader = Thread.currentThread().getContextClassLoader();
+            if (loader == null) loader = Strata.class.getClassLoader();
+            services = services.orElse(Services.discover(loader, config.getStringList("strata.services.classes"),
+                    config.getBoolean("strata.services.discover")));
+        }
         StrataRuntime runtime = startRuntime(settings, services);
         try {
             if (settings.discoverEntities()) {
