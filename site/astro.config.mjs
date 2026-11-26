@@ -5,7 +5,7 @@ import svelte from '@astrojs/svelte';
 import starlightSidebarTopics from 'starlight-sidebar-topics';
 
 export default defineConfig({
-  // Where the site is published, e.g. DOCS_SITE=https://prabhugopal.github.io DOCS_BASE=/strata for GitHub Pages.
+  // Where the site is published, e.g. DOCS_SITE=https://strata-jvm.github.io DOCS_BASE=/strata for GitHub Pages.
   site: process.env.DOCS_SITE,
   base: process.env.DOCS_BASE ?? '/',
   integrations: [
@@ -13,7 +13,7 @@ export default defineConfig({
       title: 'Strata',
       description: 'Durable, distributed entities for the JVM, on Apache Pekko.',
       customCss: ['@fontsource/ibm-plex-sans/400.css', '@fontsource/ibm-plex-sans/600.css', '@fontsource/ibm-plex-mono/400.css', './src/styles/theme.css'],
-      social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/prabhugopal/strata' }],
+      social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/strata-jvm/strata' }],
       // Three topics, each with its own short sidebar, and a switcher above it.
       plugins: [
         starlightSidebarTopics([

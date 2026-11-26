@@ -1,7 +1,7 @@
 # Strata
 
-[![CI](https://github.com/prabhugopal/strata/actions/workflows/ci.yml/badge.svg)](https://github.com/prabhugopal/strata/actions/workflows/ci.yml)
-[![Docs](https://github.com/prabhugopal/strata/actions/workflows/docs.yml/badge.svg)](https://prabhugopal.github.io/strata/)
+[![CI](https://github.com/strata-jvm/strata/actions/workflows/ci.yml/badge.svg)](https://github.com/strata-jvm/strata/actions/workflows/ci.yml)
+[![Docs](https://github.com/strata-jvm/strata/actions/workflows/docs.yml/badge.svg)](https://strata-jvm.github.io/strata/)
 
 **Durable, distributed entities for the JVM, on Apache Pekko.** Write plain Java, Kotlin, Scala or
 Clojure; Strata keeps it running through crashes, restarts and deploys, and never repeats an
@@ -53,16 +53,16 @@ timer that expires unpaid orders, services found at start (`@Provides`), idempot
 
 ## Documentation
 
-**[prabhugopal.github.io/strata](https://prabhugopal.github.io/strata/)**, built from [`site/`](site/)
+**[strata-jvm.github.io/strata](https://strata-jvm.github.io/strata/)**, built from [`site/`](site/)
 (run it locally with `cd site && npm install && npm run dev`). It includes an interactive
 walkthrough of a command surviving a crash.
 
 | Start | How it works | Guides | Reference |
 |---|---|---|---|
-| [Introduction](https://prabhugopal.github.io/strata/start/introduction/) | [The seal](https://prabhugopal.github.io/strata/concepts/the-seal/) | [Services](https://prabhugopal.github.io/strata/guides/services/) | [Configuration](https://prabhugopal.github.io/strata/reference/configuration/) (generated) |
-| [Quick start](https://prabhugopal.github.io/strata/start/quick-start/) | [Durable invocations](https://prabhugopal.github.io/strata/concepts/durable-invocations/) | [Kotlin, Scala, Clojure](https://prabhugopal.github.io/strata/guides/languages/) | [Annotations](https://prabhugopal.github.io/strata/reference/annotations/) |
-| [The shop example](https://prabhugopal.github.io/strata/start/shop/) | [Timers and signals](https://prabhugopal.github.io/strata/concepts/timers/) | [Spring Boot](https://prabhugopal.github.io/strata/guides/spring/) | [Management API](https://prabhugopal.github.io/strata/reference/management-api/) |
-| | [Upgrading code](https://prabhugopal.github.io/strata/concepts/upgrades/) | [Kubernetes](https://prabhugopal.github.io/strata/guides/kubernetes/) | [The strata CLI](https://prabhugopal.github.io/strata/reference/cli/) (generated) |
+| [Introduction](https://strata-jvm.github.io/strata/start/introduction/) | [The seal](https://strata-jvm.github.io/strata/concepts/the-seal/) | [Services](https://strata-jvm.github.io/strata/guides/services/) | [Configuration](https://strata-jvm.github.io/strata/reference/configuration/) (generated) |
+| [Quick start](https://strata-jvm.github.io/strata/start/quick-start/) | [Durable invocations](https://strata-jvm.github.io/strata/concepts/durable-invocations/) | [Kotlin, Scala, Clojure](https://strata-jvm.github.io/strata/guides/languages/) | [Annotations](https://strata-jvm.github.io/strata/reference/annotations/) |
+| [The shop example](https://strata-jvm.github.io/strata/start/shop/) | [Timers and signals](https://strata-jvm.github.io/strata/concepts/timers/) | [Spring Boot](https://strata-jvm.github.io/strata/guides/spring/) | [Management API](https://strata-jvm.github.io/strata/reference/management-api/) |
+| | [Upgrading code](https://strata-jvm.github.io/strata/concepts/upgrades/) | [Kubernetes](https://strata-jvm.github.io/strata/guides/kubernetes/) | [The strata CLI](https://strata-jvm.github.io/strata/reference/cli/) (generated) |
 
 ## What's in the repository
 

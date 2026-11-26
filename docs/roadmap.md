@@ -70,12 +70,12 @@ Ideas that don't pass stay under "Ideas to weigh separately", not in the plan.
 
 ## Housekeeping
 
-- Push the local Strata commits. (Stratum is on GitHub since 2026-11-26: `prabhugopal/stratum`,
-  private, branches `main` and `strata`.)
+- Both repos are in the `strata-jvm` organization since 2026-11-26: `strata-jvm/strata`
+  (public; docs at https://strata-jvm.github.io/strata/) and `strata-jvm/stratum` (private,
+  branches `main` and `strata`).
 - Choose a LICENSE (Apache-2.0 suggested).
 - Commit email: switch to a GitHub noreply address?
 - Delete the `backup-before-rewrite` branch once it's no longer needed.
-- Move to a GitHub organization later, then update the `prabhugopal/strata` references.
 
 ## Design notes
 
