@@ -197,6 +197,34 @@ once even with several nodes polling, and a claim held by a node that died expir
 (`strata.timers.claim-for`) so another node delivers it. From outside an entity:
 `strata.schedule(OrderEntity.TYPE, "o1", Duration.ofHours(1), "expire", null)`.
 
+## Upgrading code
+
+**State versions.** When fields change meaning or move, raise the entity's version and add a
+migration from the previous one. Stored state remembers its version; older state is migrated
+step by step when loaded and saved in the new shape at the next commit. A node refuses state
+written by a newer version, so a rollback can't silently corrupt it.
+
+```java
+@Entity(version = 2)
+public class Wallet {
+    private long balanceCents;                       // version 1 stored "balance" in whole units
+    @Migrate(from = 1)
+    static Map<String, Object> toCents(Map<String, Object> v1) {
+        v1.put("balanceCents", ((Number) v1.remove("balance")).longValue() * 100);
+        return v1;
+    }
+}
+```
+
+The processor checks there's exactly one `@Migrate` for each version below the current one.
+
+**Commands interrupted across an upgrade.** A command resumed after a crash runs the new code.
+If that code no longer makes the calls the record says were made, continuing could repeat or
+skip effects, so by default the entity **stalls**: its record is kept, it answers "stalled", a
+`stalled` event appears, and you roll back or abandon. With
+`strata.durability.on-divergence = abandon` the interrupted command is dropped instead (effects
+already made stay made) and the entity carries on.
+
 ## Durable invocations
 
 A sealed entity's service calls are its only effects, so Strata records them. A command of an
@@ -420,6 +448,9 @@ Kubernetes pod spec).
 - Timers fire by themselves, cancelling stops them, a failed command leaves none, a timer set on a
   stopped node fires on another, and with two nodes polling 20 timers are each delivered once.
 - The shop example end to end, in-process and as the packaged app (services discovered, no main).
+- Upgrades: release-1 state loads into release 2 through its migration; release-1 code refuses
+  release-2 state; a command interrupted under release 1 and resumed by reordered code stalls with
+  its record kept, or with `abandon` is dropped and the entity continues.
 - Annotation mistakes fail compilation with a message on the offending element.
 - Bad configuration fails at startup.
 - The same API works from Java, Kotlin, Scala 3 and Clojure.

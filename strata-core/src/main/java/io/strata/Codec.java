@@ -23,7 +23,12 @@ public final class Codec {
                 .findAndRegisterModules()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, settings.failOnUnknownProperties())
                 .setVisibility(PropertyAccessor.FIELD, visibility(settings.fieldVisibility()))
-                .setAnnotationIntrospector(new InjectedFieldsIgnored());
+                .setAnnotationIntrospector(new InjectedFieldsIgnored())
+                // JSON read without a target type is plain Java (Map, List, String, Number,
+                // Boolean) whatever modules are on the classpath: the Scala module would otherwise
+                // turn it into Scala collections. Typed Scala fields still use that module.
+                .registerModule(new com.fasterxml.jackson.databind.module.SimpleModule("strata-untyped-as-java")
+                        .addDeserializer(Object.class, new com.fasterxml.jackson.databind.deser.std.UntypedObjectDeserializer(null, null)));
     }
 
     /** @Inject fields are collaborators, not state: never stored or sent. */

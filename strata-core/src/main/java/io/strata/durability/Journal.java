@@ -72,7 +72,7 @@ public final class Journal {
             replayed++;
             JsonNode e = JSON.readTree(recorded.get(n - 1));
             if (!name.equals(e.path("call").asText())) {
-                throw new StrataException(StrataException.Kind.INTERNAL, "Replay diverged at call " + n + ": the journal has "
+                throw new ReplayDivergedException("Replay diverged at call " + n + ": the journal has "
                         + e.path("call").asText() + " but the code now calls " + name + ". Did the entity's code change while a command was running?");
             }
             if (e.has("error")) throw rebuild(e.get("error"));

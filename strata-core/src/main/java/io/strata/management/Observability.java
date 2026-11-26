@@ -81,6 +81,18 @@ public final class Observability implements EntityObserver {
     }
 
     @Override
+    public void stalled(String type, String id, String command, String error) {
+        metrics.counter("strata_stalled_total", "Interrupted commands that couldn't be resumed safely", TYPE, List.of(type), 1);
+        event("stalled", type, id, command, null, null, StrataException.Kind.UNAVAILABLE, error);
+    }
+
+    @Override
+    public void resumed(String type, String id, String command, int replayedCalls) {
+        metrics.counter("strata_resumed_total", "Interrupted commands resumed after a node stopped", TYPE, List.of(type), 1);
+        event("resumed", type, id, command, null, null, null, null);
+    }
+
+    @Override
     public void loadFailed(String type, String id, String error) {
         metrics.counter("strata_load_failures_total", "State loads that failed", TYPE, List.of(type), 1);
         event("load-failed", type, id, null, null, null, StrataException.Kind.UNAVAILABLE, error);

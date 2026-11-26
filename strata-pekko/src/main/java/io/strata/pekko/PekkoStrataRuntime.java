@@ -89,6 +89,12 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         }
     }
 
+    private String onDivergence() {
+        String v = settings.config().getString("strata.durability.on-divergence");
+        if (!v.equals("stall") && !v.equals("abandon")) throw new StrataException("strata.durability.on-divergence must be stall or abandon, not " + v);
+        return v;
+    }
+
     // ---- timers ----
 
     private final java.util.concurrent.ScheduledExecutorService timerTicks = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
@@ -213,7 +219,8 @@ public final class PekkoStrataRuntime implements StrataRuntime {
         // Services were looked up once above; a missing one failed registration (and so startup).
         EntityType.Bound<S> bound = check;
         var deps = new EntityActor.Deps<>(codec, store, type.durability(settings), settings.passivateAfter(), pekko.stashCapacity(), observability, bound,
-                commands, settings.config().getDuration("strata.durability.result-retention"), offThread);
+                commands, settings.config().getDuration("strata.durability.result-retention"), offThread,
+                onDivergence().equals("abandon"));
         sharding.init(Entity.of(key, ctx -> EntityActor.create(type, ctx.getEntityId(), deps, ctx.getShard()))
                 .withStopMessage(Stop.INSTANCE));
     }

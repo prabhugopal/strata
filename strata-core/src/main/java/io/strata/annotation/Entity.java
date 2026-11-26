@@ -48,4 +48,11 @@ public @interface Entity {
      * served unless asked; the routes are listed by the management API and {@code strata types}.
      */
     boolean expose() default false;
+
+    /**
+     * The version of the state's shape. Raise it when fields change meaning or move, and add a
+     * {@link Migrate} method from the previous version. Stored state remembers its version; older
+     * state is migrated when loaded, and a node refuses state written by a newer version.
+     */
+    int version() default 1;
 }

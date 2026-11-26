@@ -50,7 +50,8 @@ import java.util.function.BiFunction;
  */
 final class EntityActor<S> {
     record Deps<S>(Codec codec, StateStore store, Durability durability, Duration passivateAfter, int stashCapacity,
-                   EntityObserver observer, EntityType.Bound<S> inject, Executor executor, Duration resultRetention, boolean offThread) {}
+                   EntityObserver observer, EntityType.Bound<S> inject, Executor executor, Duration resultRetention, boolean offThread,
+                   boolean abandonOnDivergence) {}
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -95,7 +96,11 @@ final class EntityActor<S> {
     private Behavior<Msg> load() {
         return await(deps.store().load(type.name(), id), (stored, err) -> {
             if (err != null) return loadFailed(err);
-            state = injected(stored.map(s -> deps.codec().decode(s.state(), type.stateType())).orElseGet(type::initialState));
+            try {
+                state = injected(stored.map(s -> type.decodeState(deps.codec(), s.state())).orElseGet(type::initialState));
+            } catch (RuntimeException e) {
+                return loadFailed(e); // e.g. state from a newer version, or a migration that failed
+            }
             revision = stored.map(StoredState::revision).orElse(0L);
             return offThread ? resume() : unstashReady();
         });
@@ -210,6 +215,17 @@ final class EntityActor<S> {
         }, deps.executor()), (reply, err) -> {
             if (err == null) return completed(inv, def, reply, invocationId, started, here);
             Throwable cause = unwrap(err);
+            if (cause instanceof io.strata.durability.ReplayDivergedException diverged) {
+                if (!deps.abandonOnDivergence()) {
+                    // Keep the record; the entity waits until the code is rolled back or the command abandoned.
+                    ctx.getLog().error("{}/{} stalled resuming {}: {}", type.name(), id, inv.command(), diverged.getMessage());
+                    deps.observer().stalled(type.name(), id, inv.command(), diverged.getMessage());
+                    tell(inv, Result.failed(Kind.UNAVAILABLE, type.name() + "/" + id + " is stalled: " + diverged.getMessage()));
+                    failStashed(Kind.UNAVAILABLE, type.name() + "/" + id + " is stalled: " + diverged.getMessage());
+                    return stop();
+                }
+                ctx.getLog().warn("{}/{}: abandoning interrupted {} (strata.durability.on-divergence = abandon): {}", type.name(), id, inv.command(), diverged.getMessage());
+            }
             if (cause instanceof JournalWriteException) {
                 // Not recorded, so it may not be over: stop; it resumes when the entity next loads.
                 tell(inv, Result.failed(Kind.UNAVAILABLE, type.name() + "." + inv.command() + ": " + rootMessage(cause) + "; it resumes when the entity is next used"));
@@ -246,7 +262,7 @@ final class EntityActor<S> {
             tell(inv, Result.ok(result));
             return unstashReady();
         }
-        byte[] newState = reply.changed() ? deps.codec().encode(reply.state()) : null;
+        byte[] newState = reply.changed() ? type.encodeState(deps.codec(), reply.state()) : null;
         byte[] outcome = inv.key() == null ? null : okOutcome(result);
         long commitStarted = System.nanoTime();
         return await(deps.store().commit(type.name(), id, revision, new Commit(newState, invocationId, inv.key(), outcome, keepAfter(), schedule, cancel)), (rev, err) -> {
@@ -258,6 +274,7 @@ final class EntityActor<S> {
                     revision = rev;
                 }
                 deps.observer().command(type.name(), id, inv.command(), def.readOnly(), null, null, newState != null ? rev : null, now - started);
+                if (inv.replyTo() == null && invocationId != null) deps.observer().resumed(type.name(), id, inv.command(), 0);
                 tell(inv, Result.ok(result));
                 return unstashReady();
             }

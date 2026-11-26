@@ -73,6 +73,25 @@ public final class AnnotatedEntityTypes {
         EntityType.Builder<S> b = EntityType.builder(name, cls).initial(() -> newInstance(ctor)).mutableState().source(cls);
         if (!ann.durability().isEmpty()) b.durability(Durability.parse(ann.durability()));
         if (!ann.mount().isEmpty()) b.mount(ann.mount());
+        if (ann.version() > 1) {
+            b.version(ann.version());
+            for (Method m : cls.getDeclaredMethods()) {
+                io.strata.annotation.Migrate mig = m.getAnnotation(io.strata.annotation.Migrate.class);
+                if (mig == null) continue;
+                if (!Modifier.isStatic(m.getModifiers()) || m.getParameterCount() != 1 || !Map.class.isAssignableFrom(m.getReturnType())) {
+                    throw invalid(cls, m.getName() + ": a @Migrate method must be static and take and return a Map");
+                }
+                m.setAccessible(true);
+                b.migrate(mig.from(), state -> {
+                    try {
+                        @SuppressWarnings("unchecked") Map<String, Object> out = (Map<String, Object>) m.invoke(null, state);
+                        return out;
+                    } catch (ReflectiveOperationException ex) {
+                        throw new StrataException("Migration " + cls.getName() + "." + m.getName() + " failed", ex);
+                    }
+                });
+            }
+        }
         if (!injected.isEmpty()) {
             String typeName = name;
             b.inject(services -> {

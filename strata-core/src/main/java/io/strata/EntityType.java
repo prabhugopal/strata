@@ -74,6 +74,8 @@ public final class EntityType<S> {
     private final List<Route> routes;
     private final Injector<S> injector;
     private final Class<?> source;
+    private final int version;
+    private final Map<Integer, java.util.function.UnaryOperator<Map<String, Object>>> migrations;
 
     private EntityType(Builder<S> b) {
         this.name = b.name;
@@ -91,6 +93,58 @@ public final class EntityType<S> {
         this.routes = List.copyOf(b.routes);
         this.injector = b.injector;
         this.source = b.source;
+        this.version = b.version;
+        this.migrations = Map.copyOf(b.migrations);
+        for (int v = 1; v < version; v++) {
+            if (!migrations.containsKey(v)) throw new IllegalArgumentException("Entity type " + name + " is version " + version + " but has no migration from version " + v);
+        }
+    }
+
+    /** The version of this type's state shape (1 unless migrations were added). */
+    public int version() { return version; }
+
+    /** Field holding the shape version inside stored state (only written when the version is above 1). */
+    public static final String VERSION_FIELD = "$v";
+
+    /** Stored state → the current shape: migrations applied, version field removed. */
+    @SuppressWarnings("unchecked")
+    public S decodeState(Codec codec, byte[] stored) {
+        // Version 1 (most types): decode directly, unless the state carries a version (written by newer code).
+        if (version == 1 && !mentionsVersion(stored)) return codec.decode(stored, stateType);
+        Object raw = codec.decode(stored, Object.class);
+        if (!(raw instanceof Map<?, ?>)) return codec.decode(stored, stateType); // not an object: nothing to migrate
+        Map<String, Object> state = new LinkedHashMap<>((Map<String, Object>) raw);
+        Object v = state.remove(VERSION_FIELD);
+        int at = v instanceof Number n ? n.intValue() : 1;
+        if (at > version) {
+            throw new StrataException(StrataException.Kind.UNAVAILABLE, "Stored " + name + " state is version " + at
+                    + " but this code knows version " + version + ": it was written by a newer release (roll forward, not back)");
+        }
+        while (at < version) {
+            state = migrations.get(at).apply(state);
+            at++;
+        }
+        return codec.convert(state, stateType);
+    }
+
+    private static final byte[] VERSION_MARK = ("\"" + VERSION_FIELD + "\"").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+    private static boolean mentionsVersion(byte[] b) {
+        outer:
+        for (int i = 0; i <= b.length - VERSION_MARK.length; i++) {
+            for (int j = 0; j < VERSION_MARK.length; j++) if (b[i + j] != VERSION_MARK[j]) continue outer;
+            return true;
+        }
+        return false;
+    }
+
+    /** State → bytes to store, carrying the shape version when it's above 1. */
+    @SuppressWarnings("unchecked")
+    public byte[] encodeState(Codec codec, S state) {
+        if (version == 1) return codec.encode(state);
+        Map<String, Object> m = new LinkedHashMap<>(codec.convert(state, Map.class));
+        m.put(VERSION_FIELD, version);
+        return codec.encode(m);
     }
 
     /** The single id variable of a mount path, e.g. {@code /carts/{cartId}} → {@code cartId}. */
@@ -172,6 +226,8 @@ public final class EntityType<S> {
         private final List<Route> routes = new ArrayList<>();
         private Injector<S> injector;
         private Class<?> source;
+        private int version = 1;
+        private final Map<Integer, java.util.function.UnaryOperator<Map<String, Object>>> migrations = new java.util.HashMap<>();
 
         private Builder(String name, Class<S> stateType) {
             if (!EntityTypeNames.valid(name)) {
@@ -185,6 +241,19 @@ public final class EntityType<S> {
         public Builder<S> initial(Supplier<S> initial) { this.initial = initial; return this; }
 
         public Builder<S> durability(Durability durability) { this.durability = durability; return this; }
+
+        /** The version of the state's shape; each earlier version needs a {@link #migrate} step. */
+        public Builder<S> version(int version) {
+            if (version < 1) throw new IllegalArgumentException("version must be at least 1");
+            this.version = version;
+            return this;
+        }
+
+        /** Turn stored state of version {@code from} into {@code from + 1}. */
+        public Builder<S> migrate(int from, java.util.function.UnaryOperator<Map<String, Object>> step) {
+            if (migrations.putIfAbsent(from, step) != null) throw new IllegalArgumentException("Two migrations from version " + from + " on entity type " + name);
+            return this;
+        }
 
         /** The @Entity class this type is made from; the seal checks its code (strata.seal). */
         public Builder<S> source(Class<?> source) { this.source = source; return this; }

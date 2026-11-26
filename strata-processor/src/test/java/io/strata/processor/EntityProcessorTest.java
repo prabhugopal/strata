@@ -111,6 +111,29 @@ class EntityProcessorTest {
     }
 
     @Test
+    void versionsNeedEveryMigration() throws Exception {
+        var r = compile("p.Purse", """
+                package p;
+                import io.strata.annotation.*;
+                import java.util.Map;
+                @Entity(version = 3)
+                public class Purse {
+                    long cents;
+                    @Migrate(from = 1) static Map<String, Object> toCents(Map<String, Object> s) { return s; }
+                    @Migrate(from = 2) static Map<String, Object> rename(Map<String, Object> s) { return s; }
+                    @Command public long add(long c) { return cents += c; }
+                }
+                """);
+        assertTrue(r.ok(), r.errors());
+        String entity = Files.readString(r.out().resolve("p/PurseEntity.java"));
+        assertTrue(entity.contains(".version(3)") && entity.contains(".migrate(1, p.Purse::toCents)") && entity.contains(".migrate(2, p.Purse::rename)"), entity);
+
+        assertRejected("@Entity(version = 2) public class E { @Command public void a() {} }", "has no @Migrate(from = 1)");
+        assertRejected("@Entity(version = 2) public class E { @Migrate(from = 2) static java.util.Map<String, Object> m(java.util.Map<String, Object> s) { return s; } @Command public void a() {} }", "must be from 1 to 1");
+        assertRejected("@Entity(version = 2) public class E { @Migrate(from = 1) java.util.Map<String, Object> m(java.util.Map<String, Object> s) { return s; } @Command public void a() {} }", "must be static");
+    }
+
+    @Test
     void generatedNamesAreConfigurable() throws Exception {
         var r = compile("p.Counter", "package p; import io.strata.annotation.*; @Entity public class Counter { int n; @Command public int inc() { return ++n; } }",
                 "-Astrata.entitySuffix=Type", "-Astrata.clientSuffix=Ref");

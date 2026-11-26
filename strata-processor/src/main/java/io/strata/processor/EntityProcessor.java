@@ -110,7 +110,8 @@ public final class EntityProcessor extends AbstractProcessor {
     private record Injected(String field, TypeMirror type, String name) {}
 
     private record Model(TypeElement type, String pkg, String stateType, String entityClass, String clientClass,
-                         String name, Durability durability, String mount, List<Op> ops, List<Injected> injected) {}
+                         String name, Durability durability, String mount, List<Op> ops, List<Injected> injected,
+                         int version, Map<Integer, String> migrations) {}
 
     /** The @Inject annotation on a field (Strata's or jakarta.inject's), or null. */
     private static String injectName(VariableElement f) {
@@ -222,11 +223,30 @@ public final class EntityProcessor extends AbstractProcessor {
         }
         if (ops.isEmpty()) throw new Invalid(e, "has no @Command or @Query methods");
 
+        // Versions and migrations: one static Map -> Map step for each version below the current one.
+        int version = ann.version();
+        if (version < 1) throw new Invalid(e, "version must be at least 1");
+        Map<Integer, String> migrations = new java.util.TreeMap<>();
+        for (ExecutableElement m : ElementFilter.methodsIn(type.getEnclosedElements())) {
+            io.strata.annotation.Migrate mig = m.getAnnotation(io.strata.annotation.Migrate.class);
+            if (mig == null) continue;
+            boolean shape = m.getModifiers().contains(Modifier.STATIC) && !m.getModifiers().contains(Modifier.PRIVATE)
+                    && m.getParameters().size() == 1
+                    && processingEnv.getTypeUtils().erasure(m.getParameters().getFirst().asType()).toString().equals("java.util.Map")
+                    && processingEnv.getTypeUtils().erasure(m.getReturnType()).toString().equals("java.util.Map");
+            if (!shape) throw new Invalid(m, "a @Migrate method must be static, non-private, and take and return a Map<String, Object>");
+            if (mig.from() < 1 || mig.from() >= version) throw new Invalid(m, "@Migrate(from = " + mig.from() + ") must be from 1 to " + (version - 1) + " (the entity is version " + version + ")");
+            if (migrations.put(mig.from(), m.getSimpleName().toString()) != null) throw new Invalid(m, "two migrations from version " + mig.from());
+        }
+        for (int v = 1; v < version; v++) {
+            if (!migrations.containsKey(v)) throw new Invalid(e, "is version " + version + " but has no @Migrate(from = " + v + ")");
+        }
+
         PackageElement pkg = processingEnv.getElementUtils().getPackageOf(type);
         String base = flatName(type);
         return new Model(type, pkg.isUnnamed() ? "" : pkg.getQualifiedName().toString(), type.getQualifiedName().toString(),
                 base + option(ENTITY_SUFFIX_OPTION, DEFAULT_ENTITY_SUFFIX), base + option(CLIENT_SUFFIX_OPTION, DEFAULT_CLIENT_SUFFIX),
-                name, durability, mount, ops, injected);
+                name, durability, mount, ops, injected, version, migrations);
     }
 
     // ---- generated sources --------------------------------------------------------------------
@@ -259,6 +279,10 @@ public final class EntityProcessor extends AbstractProcessor {
             b.append(" };\n            })\n");
         }
         if (m.mount() != null) b.append("            .mount(").append(literal(m.mount())).append(")\n");
+        if (m.version() > 1) {
+            b.append("            .version(").append(m.version()).append(")\n");
+            m.migrations().forEach((from, method) -> b.append("            .migrate(").append(from).append(", ").append(s).append("::").append(method).append(")\n"));
+        }
         for (Op op : m.ops()) {
             String call = "s." + op.method().getSimpleName() + "(" + callArgs(op) + ")";
             String argType = argClass(m, op);

@@ -21,6 +21,12 @@ public interface EntityObserver {
 
     void loadFailed(String type, String id, String error);
 
+    /** An interrupted command couldn't be resumed safely (the code changed); the entity waits for a decision. */
+    default void stalled(String type, String id, String command, String error) {}
+
+    /** An interrupted command was resumed and finished. */
+    default void resumed(String type, String id, String command, int replayedCalls) {}
+
     EntityObserver NONE = new EntityObserver() {
         @Override public void activated(String type, String id) {}
         @Override public void stopped(String type, String id) {}
