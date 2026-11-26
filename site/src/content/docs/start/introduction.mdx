@@ -1,0 +1,34 @@
+---
+title: Introduction
+description: What Strata is, and what it does for you.
+---
+
+Strata runs **entities**: objects with an id, state and commands, like an order, an account or a
+shopping cart. Each entity lives in exactly one place in a cluster and handles one command at a
+time, so its code never deals with concurrency. Its state is committed before every reply, so a
+crash, even `kill -9`, loses nothing that was acknowledged.
+
+Commands that reach the outside world (charge a card, send an email, call another entity) are
+**recorded** as they run. If a node dies in the middle of one, the next node to load that entity
+finishes the command, answering already-made calls from the record. Effects happen once.
+
+What makes that safe is **the seal**: Strata checks the entity's bytecode at start, and refuses
+code that could reach the outside world any other way than through its injected services and
+`Ctx`. So nothing escapes the record.
+
+## How it compares
+
+| | Strata | Temporal | Restate |
+|---|---|---|---|
+| Runs as | A library in your JVM app | Your workers + a Temporal cluster | Your services + a Restate server |
+| Durable side effects | Call an injected service | Activity stubs | `ctx.run(...)` around each call |
+| State | Plain fields | Workflow variables | Key-value `ctx.get/set` |
+| Languages | Java, Kotlin, Scala, Clojure | Several (Java SDK) | Several (Java/Kotlin SDK) |
+| Long waits inside one function | No: timers and commands | Yes | Yes |
+
+## The parts
+
+- **Runtime** (`strata-pekko`): Pekko cluster sharding, one actor per entity.
+- **Stores** (`strata-store-jdbc`): PostgreSQL in production, H2 for development, or memory.
+- **HTTP** (`strata-http` or the Spring starter): routes from annotations, plus the management API.
+- **Tools**: the Gradle plugin, the `strata` CLI, and [Stratum](/guides/stratum/), a desktop app that watches nodes.

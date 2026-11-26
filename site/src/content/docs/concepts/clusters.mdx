@@ -1,0 +1,25 @@
+---
+title: Clusters and failover
+description: How entities spread over nodes and move when a node stops.
+---
+
+import Failover from '../../../components/Failover.svelte';
+
+Strata runs on [Apache Pekko](https://pekko.apache.org) cluster sharding. Entity ids hash to
+shards, and shards are spread over the nodes. When a node stops (a deploy, a crash, a scale-down)
+its shards move to the others, and each entity loads its committed state from the store on its
+new node. A command that was running there resumes, as in [durable
+invocations](/concepts/durable-invocations/).
+
+<Failover client:visible />
+
+Tested: on two nodes, 40 entities split between them; one node leaves and all 40 answer from the
+other with their state. On Kubernetes, deleting a pod loses no committed state, and
+the replacement pod rejoins the same cluster.
+
+## Joining
+
+- **`strata.pekko.cluster-mode = single`** (default): one node, its own cluster.
+- **`seed-nodes`** with `STRATA_SEED_NODES`: list every node. A restarted node then rejoins the
+  others instead of starting a cluster of its own. The [Kubernetes guide](/guides/kubernetes/)
+  sets this up for you.

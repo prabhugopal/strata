@@ -1,0 +1,47 @@
+---
+title: Quick start
+description: From an empty project to a running, crash-proof counter.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+
+<Steps>
+
+1. **Apply the plugin.** It adds Strata's modules, the annotation processor and the JVM flags
+   Strata needs. Strata runs on Java 21 or newer.
+
+   ```kotlin title="build.gradle.kts"
+   plugins {
+       java
+       application
+       id("io.strata")
+   }
+   ```
+
+2. **Write an entity.** Fields are the state; `@Command` methods change it, `@Query` methods read it.
+
+   ```java title="src/main/java/demo/Counter.java"
+   @Entity(mount = "/counters/{id}", expose = true)
+   public class Counter {
+       private long count;
+
+       @Command public long increment() { return ++count; }
+       @Query   public long count()     { return count; }
+   }
+   ```
+
+3. **Run it.** There's no main class to write: the plugin runs Strata's own.
+
+   ```sh
+   ./gradlew run --args="--strata.store.kind=memory"
+   curl -X POST localhost:8080/counters/alice/increment   # 1
+   curl localhost:8080/counters/alice/count               # 1
+   ```
+
+4. **Keep it.** With `strata.store.kind = jdbc` (H2 by default, PostgreSQL via `STRATA_JDBC_URL`),
+   stop the process however you like, start it again, and `alice` is still at 1.
+
+</Steps>
+
+Next: [the shop example](/start/shop/) uses every construct, and [durable
+invocations](/concepts/durable-invocations/) shows what happens when a node dies mid-command.

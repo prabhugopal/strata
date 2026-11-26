@@ -1,0 +1,38 @@
+---
+title: Timers and signals
+description: Workflows as state, commands and durable timers.
+---
+
+A workflow is state, commands and timers. A signal from outside is just a command; a timeout is
+a **durable timer** that runs a command later:
+
+```java
+@Entity
+public class Approval {
+    private String status = "draft", expiry;
+    @Inject Entities entities;  @Inject Ctx ctx;
+
+    @Command public String request() {
+        status = "waiting";
+        expiry = ApprovalClient.of(entities, ctx.entityId()).later(Duration.ofDays(3)).expire();
+        return expiry;
+    }
+    @Command public String approve() { entities.cancel(expiry); return status = "approved"; }
+    @Command public String expire()  { if (status.equals("waiting")) status = "expired"; return status; }
+}
+```
+
+- Timers set inside a command are written **in the same commit** as its state: a failed command
+  leaves none.
+- Every node polls for due timers of the types it runs, **claims** them in the store and delivers
+  each with the key `timer/<id>`: a timer fires once even with several nodes polling, and a claim
+  held by a node that died expires so another node delivers it.
+- From outside an entity: `strata.schedule(OrderEntity.TYPE, "o1", Duration.ofHours(1), "expire", null)`.
+
+Settings: `strata.timers.poll-interval`, `batch`, `claim-for`.
+
+:::note[Why not sleep inside a command?]
+Temporal and Restate let one function wait for days. In Strata an entity handles one command at a
+time, so a command that waited would block `approve()` and `cancel()` meanwhile. State plus timers
+keeps the entity responsive to every signal.
+:::

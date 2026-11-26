@@ -1,0 +1,27 @@
+---
+title: Time, randomness and other entities
+description: Ctx and Entities, the two things sealed code gets from Strata.
+---
+
+```java
+@Entity
+public class Transfer {
+    @Inject Ctx ctx;              // ctx.now(), ctx.randomLong(), ctx.randomUuid(), ctx.entityId()
+    @Inject Entities entities;    // other entities
+
+    @Command public String run(Request r) {
+        WalletClient.of(entities, r.from()).blocking().withdraw(r.cents());
+        WalletClient.of(entities, r.to()).blocking().deposit(r.cents());
+        return "done at " + ctx.now();
+    }
+}
+```
+
+- **`Ctx`** values are recorded inside a recorded command, so a resumed command sees the same
+  time and the same random numbers. An entity that only uses `Ctx` keeps the fast inline path.
+- **Calls to other entities** are recorded, and each carries the idempotency key
+  `<invocation>/<call number>`: even if the caller dies after sending a call but before recording
+  its answer, the target applies it once. A transfer interrupted between the two wallets finishes
+  on the next node with each wallet changed exactly once.
+- An entity calling **itself** is refused at once: it handles one command at a time, so it would
+  wait forever. Referring to itself (to schedule a timer on itself) is fine.

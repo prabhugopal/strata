@@ -1,0 +1,16 @@
+---
+title: Annotations
+description: Every annotation in io.strata.annotation.
+---
+
+| Annotation | On | Means |
+|---|---|---|
+| `@Entity(name, mount, expose, durability, version)` | class | An entity type; fields are its state |
+| `@Command(name, post/put/patch/delete)` | method | Changes state; committed before the reply |
+| `@Query(name, get/post)` | method | Reads state; never writes |
+| `@Inject(name)` | field | A service, `Ctx` or `Entities`; never stored |
+| `@Migrate(from)` | static method | Turns stored state of version `from` into `from + 1` |
+| `@Provides(name)` | class | A service implementation, created at start |
+
+Mistakes are compile errors on the line they're on: a GET route with arguments, a route without a
+mount, a `final` state field, a missing migration step, a method name the generated client uses.

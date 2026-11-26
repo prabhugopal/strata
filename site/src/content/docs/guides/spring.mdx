@@ -1,0 +1,24 @@
+---
+title: Spring Boot
+description: Strata inside a Spring Boot app, without mixing the two.
+---
+
+Add the starter (or `strata { spring.set(true) }` with the Gradle plugin). Strata then reads
+`strata.*` from `application.yaml`, serves entity routes on Spring's WebFlux server, takes its
+services from Spring beans, and starts and stops with the application context.
+
+```java
+@Component
+public class Greeter { public String greet(String name, long n) { return "Hello " + name + ", visit #" + n; } }
+
+@Entity(mount = "/visitors/{id}")
+public class Visitor {
+    private long visits;
+    @Inject Greeter greeter;                       // a Spring bean
+    @Command(post = "/visit") public String visit(String name) { return greeter.greet(name, ++visits); }
+}
+```
+
+The two stay separate: **entities are never Spring beans, and beans are never actors.** Pekko
+owns where entities live and how they run; Spring owns the app around them. Spring is optional:
+a plain app starts faster (measured: 5.5 s vs 9.2 s) and uses less memory (261 MB vs 407 MB).

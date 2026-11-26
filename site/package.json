@@ -1,0 +1,23 @@
+{
+  "name": "strata-site",
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "reference": "node scripts/reference.mjs",
+    "dev": "node scripts/reference.mjs && astro dev",
+    "start": "npm run dev",
+    "build": "node scripts/reference.mjs && astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.43.1",
+    "@astrojs/svelte": "^9.1.6",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource/ibm-plex-sans": "^5.3.0",
+    "astro": "^7.3.6",
+    "sharp": "^0.35.3",
+    "svelte": "^5.59.2",
+    "typescript": "^6.0.3"
+  }
+}

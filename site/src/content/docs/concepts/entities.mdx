@@ -1,0 +1,43 @@
+---
+title: Entities
+description: State, commands and queries, one place in the cluster, one command at a time.
+---
+
+An entity type is a class. Its **fields are the state**, `@Command` methods change it and
+`@Query` methods read it. Each id (`counters/alice`) is one entity, created on first use.
+
+```java
+@Entity(mount = "/counters/{id}", expose = true)
+public class Counter {
+    private long count;
+    @Command public long add(long amount) { return count += amount; }
+    @Query   public long count()          { return count; }
+}
+```
+
+What Strata guarantees:
+
+- **One place, one command at a time.** Each entity lives on one node and handles commands in
+  order. 200 concurrent increments end at exactly 200; your code has no locks.
+- **Committed before the reply.** A persistent entity's new state is written to the store before
+  the caller gets its answer, with a revision that stops a stale node from overwriting it.
+- **A failed command changes nothing.** Commands work on a copy; if one throws, the stored and the
+  in-memory state stay as they were.
+- **Idle entities unload** after `strata.entity.passivate-after` and reload on their next command.
+
+## Arguments, results and routes
+
+None, one (sent as the value itself) or several parameters (a JSON object by name). Results and
+state are JSON (Jackson), so they cross nodes and languages. With a `mount`, commands become HTTP
+routes; `expose = true` gives every command `POST /<name>` and every query `GET /<name>`, or set
+paths yourself: `@Command(post = "/increment")`.
+
+## Clients
+
+The processor generates a typed client for each entity:
+
+```java
+CounterClient.of(strata, "alice").add(5);              // CompletionStage<Long>
+CounterClient.of(strata, "alice").blocking().add(5);   // long, waiting for it
+CounterClient.of(strata, "alice").withIdempotencyKey("req-7").add(5);  // a retry won't add twice
+```

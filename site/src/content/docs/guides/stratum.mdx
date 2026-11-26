@@ -1,0 +1,17 @@
+---
+title: Observing with Stratum
+description: A desktop app that watches Strata nodes.
+---
+
+Stratum connects to a node's management API. Add a server (Servers → Strata) with its URL and,
+if the node sets `strata.management.token`, the token; Stratum keeps it on disk readable only by
+you and never shows it in the UI.
+
+- **Entities**: every type, stored and in-memory entities, each one's state and revision, and a
+  form to run any command (built from its parameter types).
+- **Activity**: commands, failures, entities loading and unloading, resumed and stalled commands.
+- **Metrics**: commands per second, latency percentiles, commits, entities in memory.
+- **Cluster**: the nodes, the leader, and where entities live.
+
+Marking a server read-only in Stratum stops it running commands, and every command it runs is
+written to its audit log.

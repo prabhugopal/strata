@@ -1,0 +1,23 @@
+---
+title: Management API
+description: The HTTP API the CLI and Stratum use.
+---
+
+Served under `strata.management.base-path` (`/strata`) on the same server as entity routes. Set
+`strata.management.token` to require `Authorization: Bearer <token>`, and `allow-invoke = false`
+to make it read-only.
+
+| Endpoint | What |
+|---|---|
+| `GET /strata/info` | Node, version, store, uptime |
+| `GET /strata/cluster` | Members, leader, entities per type per node |
+| `GET /strata/types` | Entity types, commands with parameter and result schemas, routes |
+| `GET /strata/types/{type}/entities?after=&limit=` | Stored and in-memory entities, paged by id |
+| `GET /strata/types/{type}/entities/{id}` | State, revision, whether it's in memory |
+| `POST /strata/types/{type}/entities/{id}/{command}` | Run a command (JSON in, JSON out); honours `Idempotency-Key` |
+| `GET /strata/events?after=&type=&id=` | Recent events on this node |
+| `GET /strata/metrics` | Prometheus text: commands by outcome, latency, commits, live entities, resumed and stalled |
+| `GET /strata/health/live`, `/strata/health/ready` | Probes, no token needed |
+
+Errors come back as `{"error": "…"}` with a status from their kind: 400 bad argument, 404 not
+found, 409 conflict, 422 the command failed, 503 unavailable.

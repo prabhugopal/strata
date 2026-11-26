@@ -1,0 +1,44 @@
+---
+title: Strata
+description: Durable, distributed entities for the JVM, on Apache Pekko.
+template: splash
+hero:
+  tagline: Write plain Java, Kotlin, Scala or Clojure. Strata keeps it running through crashes, restarts and deploys, with every effect made exactly once.
+  actions:
+    - text: Quick start
+      link: /start/quick-start/
+      icon: right-arrow
+    - text: How a crash is survived
+      link: /concepts/durable-invocations/
+      variant: minimal
+---
+
+import CrashResume from '../../components/CrashResume.svelte';
+
+## A node dies in the middle of a checkout
+
+Step through it. The card was charged before the crash; the next node finishes the checkout
+without charging it again. The entity's code has nothing in it about crashes.
+
+<CrashResume client:visible />
+
+## What you write
+
+```java
+@Entity(mount = "/orders/{id}", expose = true)
+public class Order {
+    private Status status = Status.NEW;          // state: plain fields
+    @Inject Payments payments;                   // the outside world: only through services
+    @Inject Ctx ctx;                             // time, randomness, identity
+
+    @Command public String pay(String card) throws Declined {
+        String receipt = payments.charge(ctx.entityId(), total, card);   // made exactly once
+        status = Status.PAID;
+        return receipt;
+    }
+}
+```
+
+No main class, no wiring, no retry code. Strata generates the HTTP routes and a typed client,
+spreads entities over a [Pekko](https://pekko.apache.org) cluster, commits state before every
+reply, and records every service call so an interrupted command resumes where it was.

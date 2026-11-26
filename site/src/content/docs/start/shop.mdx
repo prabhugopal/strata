@@ -1,0 +1,59 @@
+---
+title: The shop example
+description: A small shop built from entities, with every construct and no wiring.
+---
+
+`examples/shop` in the repository is a complete app: stock, orders, payments, emails and a
+payment window that expires by itself. It has no main class and no wiring code.
+
+```java title="Order.java (abridged)"
+@Entity(mount = "/orders/{id}", expose = true)
+public class Order {
+    @Inject Ctx ctx;  @Inject Entities entities;
+    @Inject Payments payments;  @Inject Mailer mailer;  @Inject ShopPolicy policy;
+
+    @Command public Status place(List<Line> order) {
+        List<Line> reserved = new ArrayList<>();
+        try {
+            for (Line l : order) {
+                StockClient.of(entities, l.sku()).blocking().reserve(l.quantity());  // another entity, exactly once
+                reserved.add(l);
+            }
+        } catch (RuntimeException outOfStock) {
+            release(reserved);                                                     // compensate, then report
+            throw outOfStock;
+        }
+        // ...
+        expiryTimer = OrderClient.of(entities, ctx.entityId()).later(policy.paymentWindow()).expire();
+        return status = Status.AWAITING_PAYMENT;
+    }
+
+    @Command public String pay(String card) throws Payments.Declined {
+        receipt = payments.charge(ctx.entityId(), total, card);
+        entities.cancel(expiryTimer);
+        mailer.send("Order " + ctx.entityId() + " paid, receipt " + receipt);
+        status = Status.PAID;
+        return receipt;
+    }
+
+    @Command public Status expire() { /* runs by itself when the window ends: releases the stock */ }
+}
+
+@Provides public class DemoPayments implements Payments { /* found at start, no registration */ }
+```
+
+| Construct | Where |
+|---|---|
+| Entities calling entities, compensation on failure | `place` → `Stock.reserve` / `release` |
+| A durable timer, and cancelling it | `later(…).expire()`, `entities.cancel` |
+| Services found at start, reading configuration | `@Provides ConfiguredPolicy` reads `shop.*` |
+| Recorded effects, an idempotent payment | `pay` with an `Idempotency-Key` header |
+| Default routes, no main | `expose = true`, `io.strata.StrataMain` |
+
+```sh
+./gradlew :examples:shop:run --args="--strata.store.kind=memory"
+curl -X POST localhost:8080/stock/tea/restock -d 10
+curl -X POST localhost:8080/orders/a1/place -H 'content-type: application/json' -d '[{"sku":"tea","quantity":2}]'
+curl -X POST localhost:8080/orders/a1/pay -H 'Idempotency-Key: k1' -d '"4242-4242"'
+curl localhost:8080/orders/a1/summary      # "PAID: 1 lines, 900 cents, receipt R-…"
+```

@@ -1,0 +1,38 @@
+---
+title: Durable invocations
+description: How a command survives its node dying halfway through.
+---
+
+import CrashResume from '../../../components/CrashResume.svelte';
+
+When an entity uses services, each command is **recorded** as it runs:
+
+1. Before it starts, Strata stores that the command is starting, with its argument.
+2. Each service call's outcome, a result or an exception, is stored **before the code continues**.
+3. When it finishes, one transaction commits the new state and clears the record.
+
+If the node dies in between, the next node to load the entity runs the command again. Calls that
+were recorded return their recorded outcome without running; once past the record, calls run for
+real. A recorded exception is thrown again, so the code takes the same branch it took before.
+
+<CrashResume client:visible />
+
+## Idempotency keys
+
+A caller that times out and retries, or a message delivered twice, shouldn't run a command twice.
+Give the request a key and a repeat gets the first outcome, success or failure:
+
+```java
+OrderClient.of(strata, "o1").withIdempotencyKey("checkout-o1").checkout(500);
+```
+
+Over HTTP, send the `Idempotency-Key` header (`strata.http.idempotency-header`). Outcomes are
+kept for `strata.durability.result-retention`.
+
+## Limits
+
+- An effect that happened but whose outcome wasn't stored yet (the node died in between) runs
+  again on resume. Every journal has this window; for payments, the provider's own idempotency
+  key closes it.
+- Only interface services are recorded. An injected class is used as is, with a warning.
+- Entities without services keep the fast inline path: no records, nothing to resume.

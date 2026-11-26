@@ -1,0 +1,29 @@
+---
+title: Services
+description: How entities get payment clients, mailers, repositories and other collaborators.
+---
+
+Entities reach the outside world only through **services**: interfaces they inject.
+
+```java
+@Entity
+public class Basket {
+    @Inject Pricing pricing;                       // by type
+    @Inject(name = "discounts") Pricing discounts; // by name
+}
+```
+
+Services are never stored, they're filled in whenever an entity is created, loaded or copied,
+and they're looked up once per type at start: a missing one stops startup with a message naming
+the entity, field and type. Calls on interface services are recorded.
+
+## Providing them
+
+| How | When |
+|---|---|
+| `@Provides public class StripePayments implements Payments` | Plain apps: found and created at start, offered for each interface it implements |
+| `Strata.run(Services.builder().add(Pricing.class, impl).build(), args)` | Instances you build yourself (these win over discovered ones) |
+| Spring beans | In Spring Boot apps, by type (honouring `@Primary`) or by bean name |
+
+Services may read configuration, files or the network; entities can't. Keep business rules in the
+entity and integration in the service.

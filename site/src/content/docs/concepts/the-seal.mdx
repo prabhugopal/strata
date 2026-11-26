@@ -1,0 +1,39 @@
+---
+title: The seal
+description: Why entity code can only reach the outside world through its services.
+---
+
+To resume a command after a crash without repeating its effects, Strata must see every effect.
+On the JVM any library can open a socket or read the clock, so Strata **checks**: when an entity
+type registers, it reads the class's bytecode (and that of your classes it uses) and checks every
+class and member referenced against an allowlist.
+
+Refused, with the class, method and line:
+
+- the clock and randomness (`System.currentTimeMillis`, `Instant.now`, `new Random()`): use `Ctx`
+- threads, sleeping, background work (`Thread`, `CompletableFuture.runAsync`)
+- sockets, HTTP clients, files, JDBC: use an injected service
+- reflection, class loading, and static fields shared between entities
+
+```text
+Entity type order isn't sealed: its code reaches outside Strata, so its effects can't be recorded.
+  shop.Order.pay (line 31) uses java.net.http.HttpClient#send (not on strata.seal.allow)
+  shop.Order.stamp (line 40) uses java.time.Instant#now (denied by "java.time.**#now")
+```
+
+Allowed: the standard library's collections, streams, records, text, `java.time` values,
+`BigDecimal`, the Kotlin and Scala standard libraries (minus their I/O and clocks), Strata's API,
+and calls on the entity's injected services: those calls are the way out, and they're recorded.
+
+## What it buys
+
+- **No step markers.** Every effect goes through a service, so every effect is recorded.
+- **Mistakes at start, not in production.** A stray `Instant.now()` stops startup.
+- **A clear list of capabilities.** An entity can do what its injected services allow, nothing else.
+- **No cost while running.** The check runs once per type at start.
+
+## Tuning it
+
+`strata.seal.mode` is `enforce` (default), `warn` or `off`. Allow a library you trust with
+`strata.seal.allow += "com.acme.money.**"`; `deny` always wins. Entities built with the builder API
+(plain lambdas, Clojure's `defentity`) aren't checked.

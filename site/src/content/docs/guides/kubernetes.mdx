@@ -1,0 +1,37 @@
+---
+title: Running on Kubernetes
+description: Build an image and deploy a Strata cluster with the Gradle plugin.
+---
+
+The plugin builds a container image and the manifests for a Strata cluster: a StatefulSet (stable
+pod names, so nodes find each other through a headless Service, every node a seed), an HTTP
+Service, a disruption budget, probes on the health endpoints, and optionally a development
+PostgreSQL with a generated password.
+
+```kotlin
+strata {
+    image { name.set("registry.example.com/shop/accounts"); tag.set("1.4.0") }
+    kubernetes {
+        replicas.set(3)
+        namespace.set("shop")
+        load.set("push")                       // minikube (default) | kind | push | none
+        postgres.set(false)
+        jdbcUrl.set("jdbc:postgresql://orders-db:5432/strata")
+    }
+}
+```
+
+| Task | Does |
+|---|---|
+| `strataDockerfile` | A Dockerfile and the app's distribution (a JRE matching your Java version, non-root) |
+| `strataImage` | Builds the image |
+| `strataManifests` | Writes `build/strata/k8s/*.yaml` |
+| `strataDeploy` | Image into the cluster, `kubectl apply`, rolls the nodes, waits |
+| `strataUndeploy` | Removes it all |
+
+```sh
+minikube start --memory 6g --cpus 4
+./gradlew strataDeploy
+kubectl port-forward svc/accounts 8080:8080
+strata server add k8s http://localhost:8080 && strata cluster
+```

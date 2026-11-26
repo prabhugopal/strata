@@ -1,0 +1,53 @@
+---
+title: Kotlin, Scala and Clojure
+description: The same entities from every JVM language.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+All four languages produce the same entity type, wire format and HTTP routes.
+
+<Tabs>
+<TabItem label="Java">
+```java
+@Entity(mount = "/accounts/{id}", expose = true)
+public class Account {
+    private long balance;
+    @Command public long deposit(long amount) { return balance += amount; }
+    @Query   public long balance()            { return balance; }
+}
+```
+The annotation processor generates the type and a typed client.
+</TabItem>
+<TabItem label="Kotlin">
+```kotlin
+@Entity(mount = "/accounts/{id}", expose = true)
+class Account {
+    private var balance: Long = 0
+    @Command fun deposit(amount: Long): Long { balance += amount; return balance }
+    @Query fun balance(): Long = balance
+}
+```
+Apply the `kapt` plugin: the same processor runs, typed client included. State fields are `var`.
+</TabItem>
+<TabItem label="Scala 3">
+```scala
+@Entity(mount = "/accounts/{id}", expose = true)
+class Account:
+  private var total: Long = 0L
+  @Command def deposit(amount: Long): Long = { total += amount; total }
+  @Query def balance(): Long = total
+```
+Built by reflection at start: list the class in `strata.entity.classes`. Scala collections work in state.
+</TabItem>
+<TabItem label="Clojure">
+```clojure
+(defentity account
+  {:mount "/accounts/{id}" :initial {:balance 0}}
+  (command deposit {:post "/deposit"} [state amount]
+    (let [s (update state :balance + amount)] [s (:balance s)]))
+  (query balance {:get ""} [state] (:balance state)))
+```
+State is an immutable map; commands return `[new-state result]`. List it in `strata.clojure.entities`.
+</TabItem>
+</Tabs>

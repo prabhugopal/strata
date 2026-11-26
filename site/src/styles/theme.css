@@ -1,0 +1,19 @@
+/* Strata's look, shared with Stratum: IBM Plex, a mineral teal accent, layered slate surfaces. */
+:root {
+  --sl-font: 'IBM Plex Sans', system-ui, sans-serif;
+  --sl-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --sl-color-accent-low: #10302a;
+  --sl-color-accent: #2fa68b;
+  --sl-color-accent-high: #b9ecdf;
+  /* Layers in diagrams: one hue per kind of record, in a fixed order. */
+  --layer-call: #2fa68b;
+  --layer-ctx: #5b86e0;
+  --layer-head: #8a94a3;
+  --layer-effect: #c4862f;
+  --layer-fail: #d4574b;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #d4f2ea;
+  --sl-color-accent: #1d7a65;
+  --sl-color-accent-high: #0c3a30;
+}

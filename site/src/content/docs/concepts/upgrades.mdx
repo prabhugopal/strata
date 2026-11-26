@@ -1,0 +1,34 @@
+---
+title: Upgrading code
+description: State versions and migrations, and commands interrupted across a deploy.
+---
+
+## State versions
+
+When fields change meaning or move, raise the version and add a migration from the previous one:
+
+```java
+@Entity(version = 2)
+public class Wallet {
+    private long balanceCents;                       // version 1 stored "balance" in whole units
+
+    @Migrate(from = 1)
+    static Map<String, Object> toCents(Map<String, Object> v1) {
+        v1.put("balanceCents", ((Number) v1.remove("balance")).longValue() * 100);
+        return v1;
+    }
+}
+```
+
+Stored state remembers its version. Older state is migrated step by step when it's loaded, and
+saved in the new shape at the next commit. A node refuses state written by a **newer** version, so
+rolling back can't silently corrupt it. The annotation processor checks there's exactly one
+`@Migrate` for every version below the current one.
+
+## Commands interrupted across a deploy
+
+A command interrupted by a crash is resumed by the code running then. If that code no longer makes
+the calls the record says were made, continuing could repeat or skip effects. By default the
+entity **stalls**: the record is kept, the entity answers "stalled", and a `stalled` event shows
+in Stratum and `strata events`. Roll back, or set `strata.durability.on-divergence = abandon` to drop
+interrupted commands whose code changed (effects already made stay made).
