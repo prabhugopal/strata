@@ -12,3 +12,6 @@ data/
 
 # Rust CLI
 cli/target/
+
+# Downloaded tools
+minikube-*
