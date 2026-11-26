@@ -49,6 +49,15 @@ Ideas that don't pass stay under "Ideas to weigh separately", not in the plan.
 
 ## Also on the list
 
+- **A Jepsen test suite** (in its own `jepsen/` folder; nothing in the runtime changes). Jepsen
+  (Clojure) runs a cluster on 5 nodes, injects faults and checks the recorded history for
+  consistency violations. Workloads: a register per entity (one writer per entity should make each
+  entity linearizable), bank transfers between wallets (the total never changes), and payments
+  with `Strata.callKey()` (no charge twice). Faults: partitions, killed and frozen (`SIGSTOP`)
+  nodes, clock skew (leases use the database's clock). Needs Linux nodes (Docker or VMs), more
+  than this laptop has; CI or a cloud VM. PostgreSQL itself stays one node: Jepsen tests Strata's
+  claims on top of it, not the database.
+
 - Load tests on dedicated hardware.
 - Publishing to Maven Central.
 - Stratum views for invocations, timers and leases.
@@ -61,7 +70,8 @@ Ideas that don't pass stay under "Ideas to weigh separately", not in the plan.
 
 ## Housekeeping
 
-- Push the local commits (Strata and Stratum).
+- Push the local Strata commits. (Stratum is on GitHub since 2026-11-26: `prabhugopal/stratum`,
+  private, branches `main` and `strata`.)
 - Choose a LICENSE (Apache-2.0 suggested).
 - Commit email: switch to a GitHub noreply address?
 - Delete the `backup-before-rewrite` branch once it's no longer needed.
