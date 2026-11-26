@@ -78,7 +78,7 @@ walkthrough of a command surviving a crash.
 | `cli/` | The `strata` command (Rust) and `strata-client`, the Rust client Stratum (the desktop observer) uses. |
 | `examples/` | `shop` (everything), `counter-pekko` and `counter-spring`, `services`, `kubernetes`, and one example per language. |
 | `site/` | The documentation site (Astro Starlight). |
-| `docs/` | The original architecture blueprint, and benchmark notes. |
+| `docs/` | The [roadmap and design notes](docs/roadmap.md), the original architecture blueprint, and benchmark notes. |
 
 ## Building and testing
 
@@ -133,7 +133,7 @@ An alpha: the core is built and tested, not yet run in production.
   and commit in one transaction, timers claimed by two nodes without overlap.
 - The same entities from Java, Kotlin, Scala 3 and Clojure; Spring Boot optional.
 
-**Not done yet:**
+**Not done yet** (in order, with design notes, in [docs/roadmap.md](docs/roadmap.md)):
 
 - Load tests on dedicated hardware (laptop numbers are in [docs/benchmarks.md](docs/benchmarks.md)).
 - Publishing artifacts to Maven Central (until then: `./gradlew publishAllPublicationsToLocalRepository`).
